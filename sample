@@ -1,0 +1,88 @@
+# Copy this file to .env and fill in real values. Never commit .env.
+# (This file previously contained real, working credentials committed to git —
+#  those were rotated. See MEMORY / chat history for details.)
+
+# --- Server ---
+PORT=5110
+NODE_ENV=development
+APP_URL=http://localhost:5110
+
+# --- Database ---
+# Only the password is read from env; host/user live in src/config/db.config.js
+MONGO_DB_PASSWORD=
+
+# --- Auth ---
+JWT_SECRET=
+JWT_EXPIRES_IN=24h
+
+# --- Paystack ---
+PAYSTACK_SECRET_KEY=
+PAYSTACK_URL=https://api.paystack.co
+PAYSTACK_CALLBACK_URL=http://localhost:5110/callback
+
+# --- Cloudinary (logo / signature uploads) ---
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+
+# --- Email (invoice delivery, payment receipts, and payment reminders) ---
+# Works with any SMTP provider (Gmail app password, Mailtrap for local
+# testing, SendGrid/Zoho/etc SMTP relay). Emails are skipped with a console
+# warning if SMTP_HOST is unset - it won't block invoice creation.
+# This is also the lower-friction of the two reminder channels: unlike
+# WhatsApp/Termii below, it needs no business verification or template
+# approval, so payment reminders can start going out by email the moment
+# these vars are filled in, even before WhatsApp is set up.
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=no-reply@yourdomain.com
+
+# --- PDF generation (invoice templates, see src/utils/templates/) ---
+# Invoices/previews render as HTML then convert to PDF via headless Chromium
+# (puppeteer-core - deliberately NOT the full `puppeteer` package, which
+# bundles its own Chromium download that can fail in locked-down/offline
+# build environments). This means your production host needs an actual
+# Chromium/Chrome binary available. Point this at it, e.g.:
+#   - Docker: install with `apt-get install -y chromium` and set
+#     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+#   - Bare VM: `npx puppeteer browsers install chrome` then point this at
+#     the printed path
+# If unset, common system paths are checked automatically - see
+# resolveExecutablePath() in src/utils/templates/pdf.js.
+PUPPETEER_EXECUTABLE_PATH=
+
+# --- WhatsApp payment reminders (via Termii, src/utils/whatsapp.util.js) ---
+# Termii is a Business Solution Provider sitting on top of Meta's WhatsApp
+# Business Platform - it fronts the integration with a simpler dashboard/API
+# (for a per-message markup on top of Meta's own pricing) but does NOT
+# remove Meta's underlying requirements: business verification and an
+# approved message template are still mandatory before anything sends.
+#   1. Sign up at termii.com and complete Termii's business verification.
+#   2. In the Termii dashboard, add a WhatsApp "device" (their term for a
+#      connected WhatsApp sender) - this walks you through the same Meta
+#      Business Manager verification/phone-number steps, just inside
+#      Termii's flow. Note the "Device ID" it gives you - that's
+#      TERMII_DEVICE_ID below.
+#   3. Grab your API key from the Termii dashboard - that's TERMII_API_KEY.
+#   4. Build a WhatsApp message template in the Termii dashboard (they
+#      submit it to Meta for approval) with these 6 named variables -
+#      matches reminder.service.js:
+#
+#        Hi {{customer_name}}, this is a reminder from {{business_name}}
+#        that invoice {{invoice_number}} has a balance of {{amount_due}}
+#        and {{due_label}}. Pay securely here: {{payment_link}}
+#
+#      Category "Utility" (payment reminders qualify - cheapest tier, and
+#      free if the customer messaged you in the last 24h). Approval
+#      typically takes hours, sometimes up to 48h - nothing sends until
+#      it's approved. Note the template's ID - that's
+#      TERMII_WHATSAPP_TEMPLATE_ID below.
+# Until all of the above is done, reminders just no-op with a console
+# warning - invoice creation/payment are never blocked by this being unset.
+TERMII_API_KEY=
+TERMII_DEVICE_ID=
+TERMII_WHATSAPP_TEMPLATE_ID=
+TERMII_BASE_URL=https://api.ng.termii.com

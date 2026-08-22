@@ -1,0 +1,117 @@
+const fs = require('fs');
+const path = require('path');
+const puppeteer = require('puppeteer-core');
+
+// puppeteer-core (not full `puppeteer`) is used deliberately: it ships
+// without its own bundled Chromium download, which failed in this sandbox's
+// restricted network environment. Instead we resolve a Chromium binary at
+// runtime:
+//   1. PUPPETEER_EXECUTABLE_PATH - set this in production (e.g. point it at
+//      the Chromium installed by `apt-get install chromium` /
+//      `npx puppeteer browsers install chrome` on your host, or the one
+//      baked into your Docker image).
+//   2. A handful of common system install locations.
+//   3. Playwright's bundled Chromium, if present (this dev sandbox has one)
+//      - convenience only, not something to rely on in production.
+// If none resolve, htmlToPdfBuffer() throws a clear error rather than
+// silently failing, since a missing browser is a hosting/deploy issue the
+// operator needs to fix, not something to fail invoice generation on forever.
+function resolveExecutablePath() {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+
+  const commonPaths = [
+    // Linux (production hosts / Docker images)
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/snap/bin/chromium',
+    // macOS (local development)
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  ];
+  for (const candidate of commonPaths) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  const pwRoot = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
+  if (fs.existsSync(pwRoot)) {
+    const found = findChromiumUnder(pwRoot);
+    if (found) return found;
+  }
+
+  return null;
+}
+
+function findChromiumUnder(root) {
+  try {
+    const entries = fs.readdirSync(root).filter((name) => name.startsWith('chromium'));
+    for (const entry of entries) {
+      const candidate = path.join(root, entry, 'chrome-linux', 'chrome');
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  } catch (err) {
+    // ignore - falls through to null
+  }
+  return null;
+}
+
+let browserPromise = null;
+
+// A single shared browser instance is reused across renders (launching
+// Chromium per-request is slow and wasteful); if it crashes or disconnects,
+// the next call transparently launches a fresh one.
+async function getBrowser() {
+  if (browserPromise) {
+    const existing = await browserPromise;
+    // puppeteer-core exposes connection state as a `connected` property, not
+    // an isConnected() method (that's the older puppeteer API surface).
+    if (existing && existing.connected) return existing;
+    browserPromise = null;
+  }
+
+  const executablePath = resolveExecutablePath();
+  if (!executablePath) {
+    throw new Error(
+      'No Chromium executable found for PDF generation. Set PUPPETEER_EXECUTABLE_PATH ' +
+      'to a Chromium/Chrome binary on this host (see src/utils/templates/pdf.js).'
+    );
+  }
+
+  browserPromise = puppeteer.launch({
+    executablePath,
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  });
+  return browserPromise;
+}
+
+// Renders an HTML document to a PDF buffer. Nothing is written to disk -
+// callers stream/email/upload the returned Buffer directly.
+async function htmlToPdfBuffer(html) {
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+  try {
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const buffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      preferCSSPageSize: false,
+    });
+    return Buffer.from(buffer);
+  } finally {
+    await page.close();
+  }
+}
+
+async function closeBrowser() {
+  if (!browserPromise) return;
+  const existing = await browserPromise.catch(() => null);
+  browserPromise = null;
+  if (existing) await existing.close().catch(() => {});
+}
+
+module.exports = { htmlToPdfBuffer, getBrowser, resolveExecutablePath, closeBrowser };

@@ -1,0 +1,47 @@
+meta {
+  name: Create Invoice
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/invoice/
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4NjcyYTE4MDRlZTZhZmRhMjc4NmY5YSIsImVtYWlsIjoianV3b250YXlvQGdtYWlsLmNvbSIsImlhdCI6MTc1MTczODQ0MywiZXhwIjoxNzUxODI0ODQzfQ.jncLWYcXHaWqrmZ7Q8LM6WfVrl6PRX5Os1Cgc7GeP0Y
+}
+
+body:json {
+  {
+    "customer": {
+      "name": "John Doe",
+      "email": "john.doe@example.com",
+      "phone": "+1234567890"
+    },
+    "currency": "NGN",
+    "items": [
+      {
+        "description": "Website design and development",
+        "name": "Web Design",
+        "quantity": 1,
+        "unitPrice": 150000.00
+      },
+      {
+        "description": "Monthly hosting fee",
+        "name": "Hosting",
+        "quantity": 1,
+        "unitPrice": 50000.00
+      }
+    ],
+    "issueDate": "2025-07-05",
+    "dueDate": "2025-08-05",
+    "status": "draft",
+    "notes": "Thank you for your business!",
+    "terms": "Payment due within 30 days",
+    "subtotal": 200000.00,
+    "tax": 124.00
+  }
+}

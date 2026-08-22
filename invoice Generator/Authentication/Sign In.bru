@@ -1,0 +1,18 @@
+meta {
+  name: Sign In
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/auth/sign-in
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "email": "juwontayo@gmail.co",
+    "password": "123456789"
+  }
+}

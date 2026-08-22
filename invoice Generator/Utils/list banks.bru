@@ -1,0 +1,11 @@
+meta {
+  name: list banks
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/utils/get-banks
+  body: none
+  auth: inherit
+}

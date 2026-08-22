@@ -1,0 +1,15 @@
+meta {
+  name: get banks
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/entity/get-banks
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4NjcyYTE4MDRlZTZhZmRhMjc4NmY5YSIsImVtYWlsIjoianV3b250YXlvQGdtYWlsLmNvbSIsImlhdCI6MTc1MzY0NjkwNiwiZXhwIjoxNzUzNzMzMzA2fQ.lLnDAH_45HS2Cv2FhpJPYD5DRXOQilfFZJnGERKG7IU
+}

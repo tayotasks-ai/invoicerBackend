@@ -1,0 +1,22 @@
+meta {
+  name: Update Entity
+  type: http
+  seq: 1
+}
+
+patch {
+  url: {{base_url}}/entity
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4NjcxZGFjOTY0YzM0YjZjNDM4MDY1MCIsImVtYWlsIjoianV3b250YXlvQGdtYWlsLmNvbSIsImlhdCI6MTc1MTU4ODU5OCwiZXhwIjoxNzUxNjc0OTk4fQ.8siyxDcEl3G3dLdk4QVJ7BuhnPMjT2xf8Dn9o4Immbw
+}
+
+body:json {
+  {
+    "phone": "+2348089622403",
+    "address": "4B, bola adelagun street, Ejigbo, Lagos."
+  }
+}

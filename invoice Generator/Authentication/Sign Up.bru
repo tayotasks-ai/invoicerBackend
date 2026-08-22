@@ -1,0 +1,20 @@
+meta {
+  name: Sign Up
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/auth/sign-up
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "email": "juwontayo@gmail.com",
+    "password": "123456789",
+    "confirm_password": "123456789",
+    "name": "test freeLancer"
+  }
+}

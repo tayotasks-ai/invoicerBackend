@@ -1,0 +1,24 @@
+meta {
+  name: addMember
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/entity/add-member
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4NjcyYTE4MDRlZTZhZmRhMjc4NmY5YSIsImVtYWlsIjoianV3b250YXlvQGdtYWlsLmNvbSIsImlhdCI6MTc1MTczODQ0MywiZXhwIjoxNzUxODI0ODQzfQ.jncLWYcXHaWqrmZ7Q8LM6WfVrl6PRX5Os1Cgc7GeP0Y
+}
+
+body:json {
+  {
+    "first_name": "tester",
+    "last_name": "tayo",
+    "email": "tester@tayo.com",
+    "type": "staff"
+  }
+}

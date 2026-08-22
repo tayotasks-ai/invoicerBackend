@@ -1,0 +1,115 @@
+var mongoose = require('mongoose');
+var Schema = mongoose.Schema;
+var crypto = require('crypto'); // Assuming you're using Node's built-in crypto module
+var { THEMES, DEFAULT_THEME_ID } = require('../utils/templates/themes');
+
+var entitySchema = new Schema({
+  code: {
+    type: String, // You can also use Schema.Types.String if UUIDs are stored as strings
+    default: function () {
+      return 'ent_' + crypto.randomUUID().split('-').join('').slice(0, 15); // Replaced arrow function with a regular function
+    }
+  },
+  parent_id: {
+    type: String,
+    ref: 'Entity',
+    default: null
+  },
+  name: {
+    type: String,
+    required: true
+  },
+  first_name: String,
+  last_name: String,
+  email: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  phone: {
+    type: String,
+    unique: true,
+    sparse: true // helps with optional unique fields
+  },
+  password: {
+    type: String,
+    required: true
+  },
+  type: {
+    type: String,
+    enum: ['business', 'staff'],
+    required: true
+  },
+  logo: String,
+  signature: String,
+  address: String,
+  // Which of the 12 invoice designs (utils/templates/themes.js) this
+  // business's invoices render with. Premium (logo-enabled) themes are
+  // gated behind `plan` in entity.service.js's editEntity.
+  invoiceTemplate: {
+    type: String,
+    enum: THEMES.map(function (t) { return t.id; }),
+    default: DEFAULT_THEME_ID
+  },
+  // Subscription tier - see src/config/plans.js. `planRenewsAt` is
+  // informational only for now (no auto-downgrade job yet); it's set by the
+  // subscription webhook handler in utils.service.js.
+  plan: {
+    type: String,
+    enum: ['free', 'growth', 'business'],
+    default: 'free'
+  },
+  planRenewsAt: {
+    type: Date,
+    default: null
+  },
+  // Tax Identification Number - required by FIRS's e-invoicing platform to
+  // identify the seller on every submitted invoice (see
+  // src/services/firs.service.js). Collected ahead of that integration
+  // going live so businesses aren't blocked entering it later.
+  tin: {
+    type: String,
+    default: null
+  },
+  // Per-invoice WhatsApp reminders default on; a business can turn them off
+  // entirely here without touching individual invoices. See
+  // src/services/reminder.service.js.
+  whatsappRemindersEnabled: {
+    type: Boolean,
+    default: true
+  },
+  resetToken: {
+    type: String,
+    default: null
+  },
+  resetTokenExpiry: {
+    type: Date,
+    default: null
+  }
+}, {
+  timestamps: true,
+  toJSON: {
+    transform: function (doc, ret) {
+      delete ret.password; // Remove password field from the output
+      return ret;
+    }
+  }
+});
+
+// Virtuals
+entitySchema.virtual('staff', {
+  ref: 'Entity',
+  localField: '_id',
+  foreignField: 'parent_id'
+});
+
+entitySchema.virtual('roleEntities', {
+  ref: 'RoleEntity',
+  localField: '_id',
+  foreignField: 'entity_id',
+  justOne: true
+});
+
+var Entity = mongoose.model('Entity', entitySchema);
+
+module.exports = Entity;

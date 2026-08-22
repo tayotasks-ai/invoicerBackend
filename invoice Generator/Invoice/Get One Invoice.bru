@@ -1,0 +1,19 @@
+meta {
+  name: Get One Invoice
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/invoice/:code
+  body: none
+  auth: bearer
+}
+
+params:path {
+  code: inv_1713f4ff42ce484fa
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4NjcyYTE4MDRlZTZhZmRhMjc4NmY5YSIsImVtYWlsIjoianV3b250YXlvQGdtYWlsLmNvbSIsImlhdCI6MTc1MTczODQ0MywiZXhwIjoxNzUxODI0ODQzfQ.jncLWYcXHaWqrmZ7Q8LM6WfVrl6PRX5Os1Cgc7GeP0Y
+}

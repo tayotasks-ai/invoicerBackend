@@ -1,0 +1,23 @@
+meta {
+  name: Add Bank
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{base_url}}/entity/add-bank
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4NjcyYTE4MDRlZTZhZmRhMjc4NmY5YSIsImVtYWlsIjoianV3b250YXlvQGdtYWlsLmNvbSIsImlhdCI6MTc1MzY0NjkwNiwiZXhwIjoxNzUzNzMzMzA2fQ.lLnDAH_45HS2Cv2FhpJPYD5DRXOQilfFZJnGERKG7IU
+}
+
+body:json {
+  {
+    "accountNumber": "0395992215",
+    "bankCode": "058",
+    "isActive": true
+  }
+}

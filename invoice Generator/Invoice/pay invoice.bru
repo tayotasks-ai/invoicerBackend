@@ -1,0 +1,15 @@
+meta {
+  name: pay invoice
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/invoice/:code/initiate-payment
+  body: none
+  auth: inherit
+}
+
+params:path {
+  code: 
+}
