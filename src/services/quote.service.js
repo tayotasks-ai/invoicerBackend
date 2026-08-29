@@ -7,6 +7,7 @@ const bankRepo = require("../repo/bankAccount.repo");
 const getPagination = require("../utils/pagination");
 const { generateInvoice } = require("../utils/invoice");
 const { sendEmail } = require("../utils/email.util");
+const { getPlan } = require("../config/plans");
 
 class QuoteService {
   // Shared shape-building for the PDF renderer - mirrors
@@ -35,6 +36,14 @@ class QuoteService {
   };
 
   static createQuote = async (data, entity_id) => {
+    const owningEntity = await entityRepository.findById(entity_id);
+    abortIf(!owningEntity, httpStatus.BAD_REQUEST, "Invalid Entity Id");
+    abortIf(
+      !getPlan(owningEntity.plan).allowQuotes,
+      httpStatus.FORBIDDEN,
+      "Proforma invoices & quotes are a Growth-plan feature. Upgrade your plan to create one."
+    );
+
     let customer;
     abortIf(
       !data.customer && !data.customerId,

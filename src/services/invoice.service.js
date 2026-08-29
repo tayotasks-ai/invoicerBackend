@@ -159,7 +159,7 @@ class InvoiceService {
       query: { invoiceNumber: code, entity: entity_id },
       populate: [
         { path: "customer", select: "name email phone" },
-        { path: "entity", select: "name" },
+        { path: "entity", select: "name plan" },
       ],
     });
     abortIf(!invoice, httpStatus.NOT_FOUND, "Invoice not found");
@@ -167,6 +167,11 @@ class InvoiceService {
       invoice.status === "paid",
       httpStatus.BAD_REQUEST,
       "This invoice is already paid - no reminder needed"
+    );
+    abortIf(
+      !getPlan(invoice.entity?.plan).allowReminders,
+      httpStatus.FORBIDDEN,
+      "Payment reminders are a Growth-plan feature. Upgrade your plan to send one."
     );
     const result = await ReminderService.sendReminderForInvoice(invoice);
     // result.reason no longer exists at the top level now that email and

@@ -2,6 +2,7 @@ const invoiceRepo = require('../repo/invoice.repo');
 const { sendWhatsAppTemplate, isConfigured: isWhatsAppConfigured } = require('../utils/whatsapp.util');
 const { sendEmail, isConfigured: isEmailConfigured } = require('../utils/email.util');
 const { money } = require('../utils/templates/money');
+const { getPlan } = require('../config/plans');
 
 // Only remind for invoices that are actually still owed, and only once
 // every REMINDER_COOLDOWN_HOURS per invoice (the scheduled chaser runs
@@ -33,7 +34,7 @@ class ReminderService {
       },
       populate: [
         { path: 'customer', select: 'name email phone' },
-        { path: 'entity', select: 'name whatsappRemindersEnabled' },
+        { path: 'entity', select: 'name whatsappRemindersEnabled plan' },
       ],
     });
   };
@@ -145,6 +146,16 @@ class ReminderService {
     let failed = 0;
     for (const invoice of invoices) {
       if (invoice.entity && invoice.entity.whatsappRemindersEnabled === false) {
+        skipped++;
+        continue;
+      }
+      // Reminders are a Growth-plan+ feature (see config/plans.js) - a
+      // Free/Starter business's invoices are silently skipped here rather
+      // than erroring, same treatment as whatsappRemindersEnabled === false
+      // above. The manual "send reminder now" button enforces the same
+      // thing loudly instead (see InvoiceService.sendReminder), since that's
+      // an explicit user action that deserves an explanation.
+      if (!getPlan(invoice.entity?.plan).allowReminders) {
         skipped++;
         continue;
       }
