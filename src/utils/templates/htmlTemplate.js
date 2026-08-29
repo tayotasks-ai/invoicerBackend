@@ -30,7 +30,12 @@ function buildInvoiceHtml(invoice, theme) {
   }, 0);
   const subtotal = invoice.subtotal != null ? Number(invoice.subtotal) : itemsSubtotal;
   const tax = invoice.tax != null ? Number(invoice.tax) : subtotal * (vatRate / 100);
-  const total = invoice.total != null ? Number(invoice.total) : subtotal + tax;
+  // Paystack's processing fee, passed through to the customer - see
+  // invoice.model.js's pre-validate hook. Not present on quotes/preview
+  // data (which never carry a real Paystack charge), so this defaults to 0
+  // rather than being recomputed here.
+  const paymentFee = Number(invoice.paymentFee || 0);
+  const total = invoice.total != null ? Number(invoice.total) : subtotal + tax + paymentFee;
   const amountPaid = Number(invoice.amountPaid || 0);
   const balanceDue = Math.max(total - amountPaid, 0);
   const hasPartialPayment = amountPaid > 0 && amountPaid < total;
@@ -72,6 +77,11 @@ function buildInvoiceHtml(invoice, theme) {
     ['Subtotal', money(subtotal, currency)],
     [`Tax${vatRate ? ` (${trimZeros(vatRate)}%)` : ''}`, money(tax, currency)],
   ];
+  // Only shown when there actually is one - older invoices created before
+  // this existed have paymentFee = 0 and shouldn't show a spurious ₦0 line.
+  if (paymentFee > 0) {
+    totalsRows.push(['Payment processing fee', money(paymentFee, currency)]);
+  }
 
   const totalsHtml = `
     <div class="totals ${theme.totalStyle === 'card' ? 'totals-card' : ''}">

@@ -1,6 +1,7 @@
 var mongoose = require('mongoose');
 var crypto = require('crypto');
 var itemSchema = require('./item.model'); // Assuming itemSchema is exported from './item.model'
+var { grossUpForPaystackFee } = require('../utils/paystackFee.util');
 
 var invoiceSchema = new mongoose.Schema({
   invoiceNumber: {
@@ -20,6 +21,16 @@ var invoiceSchema = new mongoose.Schema({
   terms: { type: String },
   subtotal: { type: Number, required: true },
   tax: { type: Number, default: 0 },
+  // Paystack's payment-processing fee, passed through to the customer
+  // rather than absorbed by the business - computed once at creation time
+  // (see paystackFee.util.js's grossUpForPaystackFee) from subtotal+tax, and
+  // baked into `total` below so the invoice document, the email, and the
+  // actual Paystack charge all agree on one number from the moment the
+  // invoice exists. Known simplification: for an invoice paid across
+  // multiple partial payments, this fee was computed once against the full
+  // amount - Paystack's real fee on each individual partial transaction can
+  // differ slightly from its share of this number.
+  paymentFee: { type: Number, default: 0 },
   // Cumulative sum of successful transactions against this invoice - lets an
   // invoice be paid across multiple partial payments. Incremented by the
   // Paystack webhook handler (utils.service.js), never trusted from a client
@@ -29,7 +40,7 @@ var invoiceSchema = new mongoose.Schema({
     type: Number,
     required: true,
     default: function() {
-      return this.subtotal + this.tax; // Regular function expression for `default`
+      return this.subtotal + this.tax + (this.paymentFee || 0);
     }
   },
   // WhatsApp payment-reminder chaser (see src/services/reminder.service.js).
@@ -65,7 +76,9 @@ invoiceSchema.pre('validate', function(next) {
   this.subtotal = (this.items || []).reduce(function(acc, item) {
     return acc + (item.unitPrice || 0) * (item.quantity || 0);
   }, 0);
-  this.total = this.subtotal + (this.tax || 0);
+  var netAmount = this.subtotal + (this.tax || 0);
+  this.paymentFee = grossUpForPaystackFee(netAmount).fee;
+  this.total = netAmount + this.paymentFee;
 
   next();
 });
@@ -77,8 +90,11 @@ invoiceSchema.pre('findOneAndUpdate', function(next) {
     var subtotal = update.items.reduce(function(acc, item) {
       return acc + (item.unitPrice || 0) * (item.quantity || 0);
     }, 0);
+    var netAmount = subtotal + (update.tax || 0);
+    var paymentFee = grossUpForPaystackFee(netAmount).fee;
     update.subtotal = subtotal;
-    update.total = subtotal + (update.tax || 0);
+    update.paymentFee = paymentFee;
+    update.total = netAmount + paymentFee;
   }
 
   next();

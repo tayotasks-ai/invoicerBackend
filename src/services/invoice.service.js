@@ -126,7 +126,12 @@ class InvoiceService {
           sendEmail({
             to: customer.email,
             subject: `Invoice ${invoice.invoiceNumber}`,
-            html: `<p>Hi ${customer.name || ""},</p><p>You have a new invoice <strong>${invoice.invoiceNumber}</strong> for ${invoice.currency} ${Number(invoice.total || 0).toFixed(2)}.</p><p>View and pay it here: <a href="${process.env.APP_URL || ""}/payment/${invoice.invoiceNumber}">${process.env.APP_URL || ""}/payment/${invoice.invoiceNumber}</a></p>`,
+            // The small "(includes a payment processing fee)" aside only
+            // appears when paymentFee > 0, so customers aren't left
+            // wondering why this number doesn't match a total they may have
+            // already seen quoted verbally - the itemized PDF attached below
+            // spells out the exact fee amount as its own line.
+            html: `<p>Hi ${customer.name || ""},</p><p>You have a new invoice <strong>${invoice.invoiceNumber}</strong> for ${invoice.currency} ${Number(invoice.total || 0).toFixed(2)}${Number(invoice.paymentFee || 0) > 0 ? " (includes a small payment processing fee - see the attached PDF for the breakdown)" : ""}.</p><p>View and pay it here: <a href="${process.env.APP_URL || ""}/payment/${invoice.invoiceNumber}">${process.env.APP_URL || ""}/payment/${invoice.invoiceNumber}</a></p>`,
             attachments: [
               { filename: `invoice_${invoice.invoiceNumber}.pdf`, content: pdfBuffer },
             ],
