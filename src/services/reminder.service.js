@@ -59,17 +59,19 @@ class ReminderService {
     };
   };
 
-  // Email is the lower-friction channel - plain SMTP, no vendor sign-up or
-  // template approval needed, so it's the one that actually works the
-  // moment sample/.env's SMTP_* vars are filled in. Kept as its own method
-  // so sendReminderForInvoice can attempt it independently of WhatsApp.
+  // Email is the lower-friction channel - sent via Resend's API, no vendor
+  // business-verification or template approval needed, so it's the one
+  // that actually works the moment sample/.env's RESEND_API_KEY is filled
+  // in (and RESEND_FROM's domain is verified in the Resend dashboard).
+  // Kept as its own method so sendReminderForInvoice can attempt it
+  // independently of WhatsApp.
   static _sendEmailReminder = async (invoice, ctx) => {
     const email = invoice.customer?.email;
     if (!email) {
       return { sent: false, reason: 'Customer has no email address on file' };
     }
     if (!isEmailConfigured()) {
-      return { sent: false, reason: 'Email (SMTP) not configured' };
+      return { sent: false, reason: 'Email (Resend) not configured' };
     }
     return sendEmail({
       to: email,
@@ -134,7 +136,7 @@ class ReminderService {
   // can invoke daily via `npm run send-reminders`.
   static runChaser = async () => {
     if (!isEmailConfigured() && !isWhatsAppConfigured()) {
-      console.warn('ReminderService.runChaser: neither email (SMTP) nor WhatsApp is configured (see sample/.env), nothing to do.');
+      console.warn('ReminderService.runChaser: neither email (Resend) nor WhatsApp is configured (see sample/.env), nothing to do.');
       return { sent: 0, skipped: 0, failed: 0, total: 0 };
     }
     const invoices = await ReminderService.findDueForReminder();

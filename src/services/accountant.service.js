@@ -11,8 +11,8 @@ class AccountantService {
   // email; whoever eventually accepts the link (after signing up/in with
   // that access) is who gets linked as `accountant`. Returns the invite
   // link directly in the response (in addition to a best-effort email) so
-  // the flow works even with SMTP unconfigured, same "always return it,
-  // email is a nice-to-have" pattern as EntityService.addMember's
+  // the flow works even with email (Resend) unconfigured, same "always
+  // return it, email is a nice-to-have" pattern as EntityService.addMember's
   // tempPassword.
   static inviteAccountant = async (businessEntityId, email) => {
     const business = await entityRepository.findById(businessEntityId);

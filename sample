@@ -26,19 +26,23 @@ CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
 
 # --- Email (invoice delivery, payment receipts, and payment reminders) ---
-# Works with any SMTP provider (Gmail app password, Mailtrap for local
-# testing, SendGrid/Zoho/etc SMTP relay). Emails are skipped with a console
-# warning if SMTP_HOST is unset - it won't block invoice creation.
+# Sent via Resend's HTTP API (https://resend.com), not raw SMTP - avoids
+# outbound SMTP ports getting blocked by some hosts, and Resend's free tier
+# (100 emails/day, 3k/month at time of writing) covers a small business
+# comfortably. Emails are skipped with a console warning if RESEND_API_KEY
+# is unset - it won't block invoice creation.
 # This is also the lower-friction of the two reminder channels: unlike
 # WhatsApp/Termii below, it needs no business verification or template
 # approval, so payment reminders can start going out by email the moment
 # these vars are filled in, even before WhatsApp is set up.
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=
-SMTP_PASS=
-SMTP_FROM=no-reply@yourdomain.com
+#
+# Setup: sign up at resend.com, add + verify a sending domain (Domains tab -
+# it walks you through adding a few DNS records), then create an API key
+# (API Keys tab). RESEND_FROM must be an address on that verified domain -
+# until a domain is verified, Resend restricts delivery to your own account
+# email only, so real customer emails won't go out yet.
+RESEND_API_KEY=
+RESEND_FROM=no-reply@yourdomain.com
 
 # --- PDF generation (invoice templates, see src/utils/templates/) ---
 # Invoices/previews render as HTML then convert to PDF via headless Chromium
