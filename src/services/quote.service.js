@@ -26,6 +26,7 @@ class QuoteService {
       businessAddress: entity?.address || "",
       businessPhone: entity?.phone || "",
       logoPath: entity?.logo || "",
+      signaturePath: entity?.signature || "",
       documentLabel: "Proforma Invoice",
       dueDateLabel: "Valid until",
       vatRate: quote.subtotal ? (quote.tax / quote.subtotal) * 100 : 0,

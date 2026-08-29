@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const fs = require("fs");
 const Entity = require("../models/entity.model");
 const { abortIf } = require("../utils/responder");
 const httpStatus = require("http-status").default;
@@ -7,13 +8,13 @@ const bankRepository = require("../repo/bankAccount.repo");
 const entityRepository = require("../repo/entity.repo");
 const invoiceRepository = require("../repo/invoice.repo");
 const { PaystackPaymentGateway } = require("../utils/paystack.utils");
-const cloudinaryUtil = require("../utils/cloudinary.util");
 const jwt = require("jsonwebtoken");
 const Authorization = require("../utils/authorization.service");
 const { getTheme, listThemes, DEFAULT_THEME_ID } = require("../utils/templates/themes");
 const { buildSampleInvoiceData } = require("../utils/sampleInvoiceData");
 const { generateInvoice } = require("../utils/invoice");
 const { getPlan, listPlans } = require("../config/plans");
+const { sendEmail } = require("../utils/email.util");
 
 class EntityService {
   static addBank = async ({
@@ -58,13 +59,38 @@ class EntityService {
     return allBanks;
   };
 
-  // Uploads a business logo image to Cloudinary and stores its URL on the
-  // entity so it can be printed on generated invoice PDFs.
+  // Only real images, never an arbitrary file, since these are stored
+  // directly as data: URIs and printed straight into invoice HTML/PDFs.
+  static _ALLOWED_IMAGE_MIMETYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+  // No cloud image host (was Cloudinary) - the uploaded file is read off
+  // disk (express-fileupload's useTempFiles writes it to /tmp) and stored
+  // as a base64 data: URI directly on the entity document. This keeps the
+  // image self-contained with zero third-party dependency, at the cost of
+  // making the entity document itself bigger - app.js caps uploads at 2MB
+  // to keep that in check, since `entity` is fetched on essentially every
+  // authenticated request (GET /entity/me).
+  static _fileToDataUri = (file) => {
+    abortIf(
+      !EntityService._ALLOWED_IMAGE_MIMETYPES.includes(file.mimetype),
+      httpStatus.BAD_REQUEST,
+      "Only PNG, JPEG, WebP or GIF images are allowed"
+    );
+    const base64 = fs.readFileSync(file.tempFilePath, { encoding: "base64" });
+    // Best-effort cleanup of the temp file express-fileupload wrote to
+    // /tmp - not fatal if it fails (the OS will reap /tmp eventually).
+    fs.unlink(file.tempFilePath, () => {});
+    return `data:${file.mimetype};base64,${base64}`;
+  };
+
+  // Stores the business logo as a base64 data: URI directly on the entity
+  // so it can be printed on generated invoice PDFs with no external
+  // dependency at render time.
   static addLogo = async ({ userId, file }) => {
     const entity = await entityRepository.findById(userId);
     abortIf(!entity, httpStatus.NOT_FOUND, "Entity not found");
-    const uploaded = await cloudinaryUtil.uploadImage(file.tempFilePath, "logos");
-    const updated = await entityRepository.update(userId, { logo: uploaded.secure_url });
+    const dataUri = EntityService._fileToDataUri(file);
+    const updated = await entityRepository.update(userId, { logo: dataUri });
     return { logo: updated.logo };
   };
 
@@ -72,8 +98,8 @@ class EntityService {
   static addSignature = async ({ userId, file }) => {
     const entity = await entityRepository.findById(userId);
     abortIf(!entity, httpStatus.NOT_FOUND, "Entity not found");
-    const uploaded = await cloudinaryUtil.uploadImage(file.tempFilePath, "signatures");
-    const updated = await entityRepository.update(userId, { signature: uploaded.secure_url });
+    const dataUri = EntityService._fileToDataUri(file);
+    const updated = await entityRepository.update(userId, { signature: dataUri });
     return { signature: updated.signature };
   };
 
@@ -204,9 +230,6 @@ class EntityService {
     abortIf(!entity, httpStatus.BAD_REQUEST, "Invalid Entity Id");
     const { first_name, last_name, email, type } = data.data;
     const { id } = data.entity;
-    // TODO(roadmap): email this temp password to the invitee instead of
-    // returning it in the API response - there's no email delivery wired up
-    // yet, so this is a stopgap that at least makes the invite usable.
     const tempPassword = crypto.randomBytes(6).toString("hex");
     const password = await bcrypt.hash(tempPassword, 10);
     const createdEntity = await entityRepository.create({
@@ -218,6 +241,21 @@ class EntityService {
       name: entity.name,
       password,
     });
+
+    // Best-effort email of the temp password - tempPassword is still
+    // returned in the API response below too (BusinessSettings.vue shows it
+    // directly), so the invite is still usable even if email isn't
+    // configured or delivery fails.
+    sendEmail({
+      to: email,
+      subject: `You've been added to ${entity.name} on invoecr`,
+      html: `<p>Hi ${first_name || ""},</p>
+<p>${entity.name} has added you as a staff member on their invoecr account.</p>
+<p>Sign in at <a href="${process.env.APP_URL || ""}">${process.env.APP_URL || "invoecr"}</a> with:</p>
+<p>Email: <strong>${email}</strong><br/>Temporary password: <strong>${tempPassword}</strong></p>
+<p style="color:#888;font-size:12px;">We'd recommend changing this password after you sign in.</p>`,
+    }).catch((error) => console.error("Failed to email staff invite:", error.message));
+
     return { entity: createdEntity, tempPassword };
   };
 }

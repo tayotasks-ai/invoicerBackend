@@ -4,7 +4,7 @@ const { FONT_STACKS } = require('./themes');
 // Builds the full HTML document Chromium renders to PDF (see pdf.js).
 // `invoice` is the plain-object shape assembled by invoice.service.js's
 // _pdfDataFor()/downloadInvoiceById():
-//   businessName, businessAddress, businessPhone, logoPath,
+//   businessName, businessAddress, businessPhone, logoPath, signaturePath,
 //   invoiceNumber, issueDate, dueDate, status, currency,
 //   customer: { name, email, address },
 //   items: [{ name, description, quantity, unitPrice, total }],
@@ -107,6 +107,7 @@ function buildInvoiceHtml(invoice, theme) {
 
   const statusHtml = statusBadge(invoice.status, isFullyPaid, hasPartialPayment);
   const logoHtml = buildLogo(theme, invoice.logoPath, invoice.businessName);
+  const signatureHtml = buildSignature(invoice.signaturePath, invoice.businessName);
   const payHtml = buildPaymentDetails(invoice, theme, balanceDue, currency, isFullyPaid);
   const businessBlock = `
     <div class="business-name">${esc(invoice.businessName || '')}</div>
@@ -138,7 +139,7 @@ function buildInvoiceHtml(invoice, theme) {
     </div>` : '';
 
   const body = renderLayout(theme.layout, {
-    theme, logoHtml, businessBlock, billTo, metaList, statusHtml,
+    theme, logoHtml, signatureHtml, businessBlock, billTo, metaList, statusHtml,
     itemsTable, totalsHtml, payHtml, notesHtml, invoice,
   });
 
@@ -176,7 +177,7 @@ function renderLayout(layout, parts) {
   }
 }
 
-function layoutBordered({ logoHtml, businessBlock, billTo, metaList, statusHtml, itemsTable, totalsHtml, payHtml, notesHtml }) {
+function layoutBordered({ logoHtml, signatureHtml, businessBlock, billTo, metaList, statusHtml, itemsTable, totalsHtml, payHtml, notesHtml }) {
   return `
   <div class="page page-bordered">
     <header class="header header-classic">
@@ -198,10 +199,11 @@ function layoutBordered({ logoHtml, businessBlock, billTo, metaList, statusHtml,
     <section class="totals-wrap">${totalsHtml}</section>
     ${payHtml}
     ${notesHtml}
+    ${signatureHtml}
   </div>`;
 }
 
-function layoutMinimal({ businessBlock, billTo, metaList, statusHtml, itemsTable, totalsHtml, payHtml, notesHtml }) {
+function layoutMinimal({ signatureHtml, businessBlock, billTo, metaList, statusHtml, itemsTable, totalsHtml, payHtml, notesHtml }) {
   return `
   <div class="page page-minimal">
     <header class="header header-minimal">
@@ -217,10 +219,11 @@ function layoutMinimal({ businessBlock, billTo, metaList, statusHtml, itemsTable
     <section class="totals-wrap">${totalsHtml}</section>
     ${payHtml}
     ${notesHtml}
+    ${signatureHtml}
   </div>`;
 }
 
-function layoutSplit({ logoHtml, businessBlock, billTo, metaList, statusHtml, itemsTable, totalsHtml, payHtml, notesHtml }) {
+function layoutSplit({ logoHtml, signatureHtml, businessBlock, billTo, metaList, statusHtml, itemsTable, totalsHtml, payHtml, notesHtml }) {
   return `
   <div class="page page-split">
     <header class="header header-split">
@@ -242,10 +245,11 @@ function layoutSplit({ logoHtml, businessBlock, billTo, metaList, statusHtml, it
     <section class="totals-wrap">${totalsHtml}</section>
     ${payHtml}
     ${notesHtml}
+    ${signatureHtml}
   </div>`;
 }
 
-function layoutReceipt({ businessBlock, billTo, metaList, statusHtml, itemsTable, totalsHtml, payHtml, notesHtml }) {
+function layoutReceipt({ signatureHtml, businessBlock, billTo, metaList, statusHtml, itemsTable, totalsHtml, payHtml, notesHtml }) {
   return `
   <div class="page page-receipt">
     <header class="header header-receipt">
@@ -263,10 +267,11 @@ function layoutReceipt({ businessBlock, billTo, metaList, statusHtml, itemsTable
     <div class="dashed"></div>
     ${payHtml}
     ${notesHtml}
+    ${signatureHtml}
   </div>`;
 }
 
-function layoutBanded({ logoHtml, businessBlock, billTo, metaList, statusHtml, itemsTable, totalsHtml, payHtml, notesHtml, theme }) {
+function layoutBanded({ logoHtml, signatureHtml, businessBlock, billTo, metaList, statusHtml, itemsTable, totalsHtml, payHtml, notesHtml, theme }) {
   return `
   <div class="page page-banded">
     <header class="band ${theme.bandHeight === 'tall' ? 'band-tall' : ''}">
@@ -287,11 +292,12 @@ function layoutBanded({ logoHtml, businessBlock, billTo, metaList, statusHtml, i
       <section class="totals-wrap">${totalsHtml}</section>
       ${payHtml}
       ${notesHtml}
+      ${signatureHtml}
     </div>
   </div>`;
 }
 
-function layoutSidebar({ logoHtml, businessBlock, billTo, metaList, statusHtml, itemsTable, totalsHtml, payHtml, notesHtml }) {
+function layoutSidebar({ logoHtml, signatureHtml, businessBlock, billTo, metaList, statusHtml, itemsTable, totalsHtml, payHtml, notesHtml }) {
   return `
   <div class="page page-sidebar">
     <aside class="sidebar">
@@ -308,6 +314,7 @@ function layoutSidebar({ logoHtml, businessBlock, billTo, metaList, statusHtml, 
       <section class="totals-wrap">${totalsHtml}</section>
       ${payHtml}
       ${notesHtml}
+      ${signatureHtml}
     </main>
   </div>`;
 }
@@ -329,6 +336,21 @@ function buildLogo(theme, logoPath, businessName) {
     return `<div class="logo logo-large-center"><img src="${esc(logoPath)}" alt="${alt}" /></div>`;
   }
   return `<div class="logo logo-plain"><img src="${esc(logoPath)}" alt="${alt}" /></div>`;
+}
+
+// Uploaded via Settings -> Business profile (EntityService.addSignature,
+// stored as a base64 data: URI). Rendered the same way in every layout -
+// unlike the logo, there's no per-theme style variant, since a signature is
+// a small, consistent "sign-off" element regardless of the invoice design.
+function buildSignature(signaturePath, businessName) {
+  if (!signaturePath) return '';
+  const alt = esc(businessName ? `${businessName} signature` : 'Signature');
+  return `
+    <div class="signature-block">
+      <img src="${esc(signaturePath)}" alt="${alt}" />
+      <div class="signature-line"></div>
+      <div class="signature-caption">Authorized signature</div>
+    </div>`;
 }
 
 function statusBadge(status, isFullyPaid, hasPartialPayment) {
@@ -466,6 +488,11 @@ function baseCss(theme) {
 
     .notes { margin-top: 18px; display: flex; gap: 30px; flex-wrap: wrap; }
     .notes-block p { margin: 2px 0 0; color: ${theme.muted}; font-size: 11px; max-width: 320px; }
+
+    .signature-block { margin-top: 28px; display: inline-flex; flex-direction: column; align-items: flex-start; }
+    .signature-block img { max-height: 50px; max-width: 160px; object-fit: contain; margin-bottom: 6px; }
+    .signature-line { width: 160px; border-top: 1px solid ${theme.border}; }
+    .signature-caption { margin-top: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: ${theme.muted}; }
 
     .logo img { display: block; }
     .logo-plain img { max-height: 46px; max-width: 140px; object-fit: contain; }

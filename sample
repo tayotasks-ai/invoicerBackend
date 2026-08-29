@@ -6,6 +6,10 @@
 PORT=5110
 NODE_ENV=development
 APP_URL=http://localhost:5110
+# Business logo/signature uploads (Settings -> Business profile) are stored
+# as base64 data: URIs directly on the entity document - no third-party
+# image host needed, nothing to configure here. Capped at 2MB per file in
+# app.js.
 
 # --- Database ---
 # Only the password is read from env; host/user live in src/config/db.config.js
@@ -19,11 +23,6 @@ JWT_EXPIRES_IN=24h
 PAYSTACK_SECRET_KEY=
 PAYSTACK_URL=https://api.paystack.co
 PAYSTACK_CALLBACK_URL=http://localhost:5110/callback
-
-# --- Cloudinary (logo / signature uploads) ---
-CLOUDINARY_CLOUD_NAME=
-CLOUDINARY_API_KEY=
-CLOUDINARY_API_SECRET=
 
 # --- Email (invoice delivery, payment receipts, and payment reminders) ---
 # Sent via Resend's HTTP API (https://resend.com), not raw SMTP - avoids

@@ -16,9 +16,17 @@ const corsOptions = {
   optionSuccessStatus: 200,
 };
 
+// Logo/signature uploads (see entity.route.js) are now stored as base64
+// data: URIs directly on the entity document (no Cloudinary/S3), so a
+// hard size cap matters more than it used to - an uncapped upload here
+// would bloat the `entity` document, which gets fetched on essentially
+// every authenticated request. 2MB is generous for a logo/signature.
 app.use(fileUpload({
   useTempFiles : true,
-  tempFileDir : '/tmp/'
+  tempFileDir : '/tmp/',
+  limits: { fileSize: 2 * 1024 * 1024 },
+  abortOnLimit: true,
+  responseOnLimit: 'File too large - the maximum size is 2MB.',
 }));
 
 // Middleware

@@ -8,6 +8,7 @@ function buildSampleInvoiceData(entity, template) {
     businessAddress: entity?.address || '14 Admiralty Way, Lekki Phase 1, Lagos',
     businessPhone: entity?.phone || '0800 000 0000',
     logoPath: entity?.logo || '',
+    signaturePath: entity?.signature || '',
     invoiceNumber: 'inv_previewsample01',
     issueDate: new Date(),
     dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),

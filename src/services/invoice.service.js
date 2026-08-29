@@ -33,6 +33,7 @@ class InvoiceService {
       businessAddress: entity?.address || "",
       businessPhone: entity?.phone || "",
       logoPath: entity?.logo || "",
+      signaturePath: entity?.signature || "",
       paymentLink: `${process.env.APP_URL || ""}/payment/${invoice.invoiceNumber}`,
       vatRate: invoice.subtotal ? (invoice.tax / invoice.subtotal) * 100 : 0,
       bank: activeBank
@@ -422,6 +423,7 @@ class InvoiceService {
       businessAddress: invoice.entity?.address || "",
       businessPhone: invoice.entity?.phone || "",
       logoPath: invoice?.entity?.logo || "",
+      signaturePath: invoice?.entity?.signature || "",
       paymentLink: `${process.env.APP_URL || ""}/payment/${invoice.invoiceNumber}`,
       vatRate: invoice.subtotal ? (invoice.tax / invoice.subtotal) * 100 : 0,
       bank: activeBank
@@ -532,19 +534,19 @@ class InvoiceService {
       currency: "NGN",
       reference,
       subaccount: getSubAccount.subAccountCode,
+      // Only short display text belongs in Paystack metadata/custom_fields -
+      // it's shown as plain text on the checkout page, not rendered as an
+      // image, and Paystack's metadata payload has its own size limits. The
+      // business logo used to be passed here as a Cloudinary URL, but now
+      // that logos are stored as base64 data: URIs (see EntityService.addLogo)
+      // that would mean stuffing a multi-hundred-KB string into transaction
+      // metadata for no benefit, so it's dropped rather than carried over.
       metadata: {
         custom_fields: [
           {
             display_name: "Company",
             variable_name: "company_name",
             value: invoice.entity.name,
-          },
-          {
-            display_name: "Logo",
-            variable_name: "logo_url",
-            value:
-              invoice?.entity?.logo ||
-              "https://unsplash.com/photos/a-person-swimming-in-the-ocean-with-a-mountain-in-the-background-s6g6ZSxM3kQ",
           },
         ],
       },

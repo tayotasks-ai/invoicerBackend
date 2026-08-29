@@ -17,7 +17,22 @@ const signUpSchema = {
     }),
 }
 
+const forgotPasswordSchema = {
+    body: Joi.object().required().keys({
+        email: Joi.string().required(),
+    }),
+}
+
+const resetPasswordSchema = {
+    body: Joi.object().required().keys({
+        token: Joi.string().required(),
+        password: Joi.string().min(6).required(),
+    }),
+}
+
 module.exports = {
     signInSchema,
-    signUpSchema
+    signUpSchema,
+    forgotPasswordSchema,
+    resetPasswordSchema,
 }

@@ -85,6 +85,23 @@ var entitySchema = new Schema({
   resetTokenExpiry: {
     type: Date,
     default: null
+  },
+  // Soft verification only - see AuthService.signup/verifyEmail. Nothing in
+  // the app currently blocks on this being false (no gated features, login
+  // still works) - it's surfaced as a dismissible-ish banner in the
+  // dashboard with a resend action. Deliberately not enforced harder than
+  // that: blocking login/signup on email delivery would mean an
+  // unconfigured or misbehaving Resend account (see sample/.env - it's
+  // optional everywhere else in this codebase) could lock genuine
+  // businesses out entirely, which is a worse failure mode than a business
+  // just not verifying.
+  emailVerified: {
+    type: Boolean,
+    default: false
+  },
+  emailVerificationToken: {
+    type: String,
+    default: null
   }
 }, {
   timestamps: true,
