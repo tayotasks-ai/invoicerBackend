@@ -7,6 +7,7 @@ const entityRepository = require("../repo/entity.repo");
 const jwt = require("jsonwebtoken");
 const Authorization = require("../utils/authorization.service");
 const { sendEmail } = require("../utils/email.util");
+const { buildEmailHtml, esc } = require("../utils/templates/emailLayout");
 
 // A reset link is only useful for a short window - long enough for someone
 // to actually check their email, short enough that an old, unused link
@@ -57,11 +58,14 @@ class AuthService {
     sendEmail({
       to: entity.email,
       subject: `Welcome to invoecr, ${entity.name}`,
-      html: `<p>Hi ${entity.first_name || entity.name},</p>
-<p>Welcome to invoecr - you're all set to start creating invoices.</p>
-<p>Before anything else, please confirm this is your email address:</p>
-<p><a href="${verifyLink}">Verify my email</a></p>
-<p style="color:#888;font-size:12px;">If you didn't create this account, you can ignore this email.</p>`,
+      html: buildEmailHtml({
+        preheader: "You're all set to start creating invoices.",
+        heading: `Welcome to invoecr, ${esc(entity.first_name || entity.name)}`,
+        bodyHtml: `<p style="margin:0 0 10px;">You're all set to start creating invoices.</p>
+<p style="margin:0;">Before anything else, please confirm this is your email address.</p>`,
+        cta: { label: "Verify my email", url: verifyLink },
+        footnote: "If you didn't create this account, you can ignore this email.",
+      }),
     }).catch((error) => console.error("Failed to send welcome/verification email:", error.message));
 
     //generate token
@@ -105,10 +109,13 @@ class AuthService {
     await sendEmail({
       to: entity.email,
       subject: "Reset your invoecr password",
-      html: `<p>Hi ${entity.first_name || entity.name},</p>
-<p>We got a request to reset your invoecr password. This link expires in 1 hour:</p>
-<p><a href="${resetLink}">Reset my password</a></p>
-<p style="color:#888;font-size:12px;">If you didn't request this, you can safely ignore this email - your password won't change.</p>`,
+      html: buildEmailHtml({
+        preheader: "Reset your invoecr password - this link expires in 1 hour.",
+        heading: `Reset your password, ${esc(entity.first_name || entity.name)}`,
+        bodyHtml: `<p style="margin:0;">We got a request to reset your invoecr password. This link expires in 1 hour.</p>`,
+        cta: { label: "Reset my password", url: resetLink },
+        footnote: "If you didn't request this, you can safely ignore this email - your password won't change.",
+      }),
     }).catch((error) => console.error("Failed to send password reset email:", error.message));
   };
 
@@ -173,9 +180,12 @@ class AuthService {
     await sendEmail({
       to: updated.email,
       subject: "Verify your invoecr email address",
-      html: `<p>Hi ${updated.first_name || updated.name},</p>
-<p>Please confirm this is your email address:</p>
-<p><a href="${verifyLink}">Verify my email</a></p>`,
+      html: buildEmailHtml({
+        preheader: "Please confirm this is your email address.",
+        heading: `Verify your email, ${esc(updated.first_name || updated.name)}`,
+        bodyHtml: `<p style="margin:0;">Please confirm this is your email address.</p>`,
+        cta: { label: "Verify my email", url: verifyLink },
+      }),
     }).catch((error) => console.error("Failed to resend verification email:", error.message));
     return updated;
   };

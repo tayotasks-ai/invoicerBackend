@@ -3,6 +3,7 @@ const { sendWhatsAppTemplate, isConfigured: isWhatsAppConfigured } = require('..
 const { sendEmail, isConfigured: isEmailConfigured } = require('../utils/email.util');
 const { money } = require('../utils/templates/money');
 const { getPlan } = require('../config/plans');
+const { buildEmailHtml, esc } = require('../utils/templates/emailLayout');
 
 // Only remind for invoices that are actually still owed, and only once
 // every REMINDER_COOLDOWN_HOURS per invoice (the scheduled chaser runs
@@ -77,10 +78,13 @@ class ReminderService {
     return sendEmail({
       to: email,
       subject: `Reminder: Invoice ${ctx.invoiceNumber} ${ctx.dueLabel}`,
-      html: `<p>Hi ${ctx.customerName},</p>
-<p>This is a friendly reminder that invoice <strong>${ctx.invoiceNumber}</strong> from ${ctx.businessName} for <strong>${ctx.balanceDueLabel}</strong> ${ctx.dueLabel}.</p>
-<p><a href="${ctx.paymentLink}">Pay ${ctx.balanceDueLabel} now</a></p>
-<p style="color:#888;font-size:12px;">If you've already paid, please disregard this message.</p>`,
+      html: buildEmailHtml({
+        preheader: `Invoice ${ctx.invoiceNumber} ${ctx.dueLabel} - ${ctx.balanceDueLabel} due.`,
+        heading: `Payment reminder from ${esc(ctx.businessName)}`,
+        bodyHtml: `<p style="margin:0;">Hi ${esc(ctx.customerName)}, this is a friendly reminder that invoice <strong>${esc(ctx.invoiceNumber)}</strong> from ${esc(ctx.businessName)} for <strong>${esc(ctx.balanceDueLabel)}</strong> ${esc(ctx.dueLabel)}.</p>`,
+        cta: { label: `Pay ${ctx.balanceDueLabel} now`, url: ctx.paymentLink },
+        footnote: "If you've already paid, please disregard this message.",
+      }),
     });
   };
 

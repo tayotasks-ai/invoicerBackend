@@ -12,6 +12,8 @@ const customerRepo = require("../repo/customer.repo");
 const entityRepo = require("../repo/entity.repo");
 const { sendEmail } = require("../utils/email.util");
 const crypto = require("crypto");
+const { buildEmailHtml, esc, infoRow } = require("../utils/templates/emailLayout");
+const { money } = require("../utils/templates/money");
 
 class UtilsService {
   static listAllBanks = async () => {
@@ -110,7 +112,16 @@ class UtilsService {
               await sendEmail({
                 to: customer.email,
                 subject: `Payment received for invoice ${_in.invoiceNumber}`,
-                html: `<p>Hi ${customer.name || ""},</p><p>We've received your payment of ${transaction.currency} ${Number(transaction.amount).toFixed(2)} for invoice <strong>${_in.invoiceNumber}</strong>.${status === "paid" ? " This invoice is now fully paid." : ` Balance remaining: ${_in.currency} ${balanceDue.toFixed(2)}.`}</p><p>Thank you!</p>`,
+                html: buildEmailHtml({
+                  preheader: `We've received your payment for invoice ${_in.invoiceNumber}.`,
+                  heading: "Payment received",
+                  bodyHtml: `<p style="margin:0 0 10px;">Hi ${esc(customer.name || "there")}, we've received your payment for invoice <strong>${esc(_in.invoiceNumber)}</strong>.</p>
+${infoRow("Amount paid", money(transaction.amount, transaction.currency))}
+${status === "paid"
+  ? infoRow("Status", "Fully paid")
+  : infoRow("Balance remaining", money(balanceDue, _in.currency))}`,
+                  footnote: "Thank you!",
+                }),
               });
             }
           } catch (emailError) {

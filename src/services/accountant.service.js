@@ -4,6 +4,7 @@ const accountantAccessRepo = require("../repo/accountantAccess.repo");
 const entityRepository = require("../repo/entity.repo");
 const { sendEmail } = require("../utils/email.util");
 const { getPlan } = require("../config/plans");
+const { buildEmailHtml, esc } = require("../utils/templates/emailLayout");
 
 class AccountantService {
   // Business owner invites an accountant (or bookkeeper, or anyone they
@@ -47,7 +48,12 @@ class AccountantService {
     sendEmail({
       to: invitedEmail,
       subject: `${business.name} invited you to manage their books on invoecr`,
-      html: `<p>${business.name} has invited you to access their invoecr account as an accountant/bookkeeper.</p><p>Accept the invite here: <a href="${inviteLink}">${inviteLink}</a></p>`,
+      html: buildEmailHtml({
+        preheader: `${business.name} invited you to access their invoecr account.`,
+        heading: `${esc(business.name)} invited you`,
+        bodyHtml: `<p style="margin:0;">${esc(business.name)} has invited you to access their invoecr account as an accountant/bookkeeper.</p>`,
+        cta: { label: "Accept invite", url: inviteLink },
+      }),
     }).catch((error) => console.error("Failed to email accountant invite:", error.message));
 
     return { access, inviteLink };

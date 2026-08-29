@@ -15,6 +15,7 @@ const { buildSampleInvoiceData } = require("../utils/sampleInvoiceData");
 const { generateInvoice } = require("../utils/invoice");
 const { getPlan, listPlans } = require("../config/plans");
 const { sendEmail } = require("../utils/email.util");
+const { buildEmailHtml, infoRow, esc } = require("../utils/templates/emailLayout");
 
 class EntityService {
   static addBank = async ({
@@ -249,11 +250,15 @@ class EntityService {
     sendEmail({
       to: email,
       subject: `You've been added to ${entity.name} on invoecr`,
-      html: `<p>Hi ${first_name || ""},</p>
-<p>${entity.name} has added you as a staff member on their invoecr account.</p>
-<p>Sign in at <a href="${process.env.APP_URL || ""}">${process.env.APP_URL || "invoecr"}</a> with:</p>
-<p>Email: <strong>${email}</strong><br/>Temporary password: <strong>${tempPassword}</strong></p>
-<p style="color:#888;font-size:12px;">We'd recommend changing this password after you sign in.</p>`,
+      html: buildEmailHtml({
+        preheader: `${entity.name} added you as a staff member on invoecr.`,
+        heading: `You've been added to ${esc(entity.name)}`,
+        bodyHtml: `<p style="margin:0 0 14px;">${esc(entity.name)} has added you as a staff member on their invoecr account. Sign in with:</p>
+${infoRow("Email", email)}
+${infoRow("Temporary password", tempPassword)}`,
+        cta: { label: "Sign in to invoecr", url: process.env.APP_URL || "" },
+        footnote: "We'd recommend changing this password after you sign in.",
+      }),
     }).catch((error) => console.error("Failed to email staff invite:", error.message));
 
     return { entity: createdEntity, tempPassword };

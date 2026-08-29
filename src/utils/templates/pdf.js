@@ -2,6 +2,23 @@ const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer-core');
 
+// @sparticuz/chromium ships its own brotli-compressed Chromium binary built
+// for exactly this problem - a generic Linux host (Render, Railway, an EC2
+// box, a Lambda) with no Chrome/Chromium already installed and no apt/sudo
+// access to install one during the build. It self-extracts to /tmp on first
+// use. Optional at the require() level (wrapped in try/catch) so nothing
+// breaks if it's ever removed - resolveExecutablePath()'s other paths (an
+// explicit PUPPETEER_EXECUTABLE_PATH, or a real system Chrome/Chromium)
+// still take priority when present, since those are faster to launch than
+// extracting a bundled binary on every cold start.
+let sparticuzChromium = null;
+try {
+  sparticuzChromium = require('@sparticuz/chromium').default;
+} catch (err) {
+  // Not installed - fine, resolveExecutablePath() just won't have this
+  // fallback available.
+}
+
 // puppeteer-core (not full `puppeteer`) is used deliberately: it ships
 // without its own bundled Chromium download, which failed in this sandbox's
 // restricted network environment. Instead we resolve a Chromium binary at
@@ -13,12 +30,28 @@ const puppeteer = require('puppeteer-core');
 //   2. A handful of common system install locations.
 //   3. Playwright's bundled Chromium, if present (this dev sandbox has one)
 //      - convenience only, not something to rely on in production.
+//   4. @sparticuz/chromium's bundled binary (see above) - the fallback that
+//      actually makes PDF generation work out of the box on a host like
+//      Render with no Chrome preinstalled and no way to apt-get one in.
 // If none resolve, htmlToPdfBuffer() throws a clear error rather than
 // silently failing, since a missing browser is a hosting/deploy issue the
 // operator needs to fix, not something to fail invoice generation on forever.
-function resolveExecutablePath() {
+// Async (unlike the rest of this resolution chain) because
+// @sparticuz/chromium's executablePath() extracts its bundled binary to
+// /tmp on first call, which is inherently an async filesystem operation -
+// everything above it in the chain is a synchronous fs.existsSync check, so
+// this only actually awaits anything on the fallback path.
+//
+// Returns `{ executablePath, args }` rather than a bare path - the launch
+// args differ for the sparticuz fallback (it ships its own recommended set,
+// tuned for constrained/containerized hosts) vs. a real system
+// Chrome/Chromium (the generic `--no-sandbox` set below), so the two need
+// to travel together rather than being decided separately in getBrowser().
+async function resolveExecutablePath() {
+  const genericArgs = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
+
   if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
-    return process.env.PUPPETEER_EXECUTABLE_PATH;
+    return { executablePath: process.env.PUPPETEER_EXECUTABLE_PATH, args: genericArgs };
   }
 
   const commonPaths = [
@@ -34,13 +67,21 @@ function resolveExecutablePath() {
     '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
   ];
   for (const candidate of commonPaths) {
-    if (fs.existsSync(candidate)) return candidate;
+    if (fs.existsSync(candidate)) return { executablePath: candidate, args: genericArgs };
   }
 
   const pwRoot = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
   if (fs.existsSync(pwRoot)) {
     const found = findChromiumUnder(pwRoot);
-    if (found) return found;
+    if (found) return { executablePath: found, args: genericArgs };
+  }
+
+  // Last resort - the bundled binary that actually makes this work
+  // out-of-the-box on a host with no Chrome preinstalled (see the
+  // require() comment above).
+  if (sparticuzChromium) {
+    const executablePath = await sparticuzChromium.executablePath();
+    return { executablePath, args: sparticuzChromium.args };
   }
 
   return null;
@@ -73,18 +114,19 @@ async function getBrowser() {
     browserPromise = null;
   }
 
-  const executablePath = resolveExecutablePath();
-  if (!executablePath) {
+  const resolved = await resolveExecutablePath();
+  if (!resolved) {
     throw new Error(
       'No Chromium executable found for PDF generation. Set PUPPETEER_EXECUTABLE_PATH ' +
-      'to a Chromium/Chrome binary on this host (see src/utils/templates/pdf.js).'
+      'to a Chromium/Chrome binary on this host, or make sure @sparticuz/chromium is ' +
+      'installed (see src/utils/templates/pdf.js).'
     );
   }
 
   browserPromise = puppeteer.launch({
-    executablePath,
+    executablePath: resolved.executablePath,
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    args: resolved.args,
   });
   return browserPromise;
 }

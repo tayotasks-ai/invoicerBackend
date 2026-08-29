@@ -13,6 +13,8 @@ const bankRepo = require("../repo/bankAccount.repo");
 const { sendEmail } = require("../utils/email.util");
 const crypto = require("crypto");
 const { getPlan } = require("../config/plans");
+const { buildEmailHtml, esc } = require("../utils/templates/emailLayout");
+const { money } = require("../utils/templates/money");
 const { ReminderService } = require("./reminder.service");
 const { FirsService } = require("./firs.service");
 const { InventoryService } = require("./inventory.service");
@@ -132,7 +134,12 @@ class InvoiceService {
             // wondering why this number doesn't match a total they may have
             // already seen quoted verbally - the itemized PDF attached below
             // spells out the exact fee amount as its own line.
-            html: `<p>Hi ${customer.name || ""},</p><p>You have a new invoice <strong>${invoice.invoiceNumber}</strong> for ${invoice.currency} ${Number(invoice.total || 0).toFixed(2)}${Number(invoice.paymentFee || 0) > 0 ? " (includes a small payment processing fee - see the attached PDF for the breakdown)" : ""}.</p><p>View and pay it here: <a href="${process.env.APP_URL || ""}/payment/${invoice.invoiceNumber}">${process.env.APP_URL || ""}/payment/${invoice.invoiceNumber}</a></p>`,
+            html: buildEmailHtml({
+              preheader: `New invoice ${invoice.invoiceNumber} for ${money(invoice.total, invoice.currency)}.`,
+              heading: "You have a new invoice",
+              bodyHtml: `<p style="margin:0;">Hi ${esc(customer.name || "there")}, you have a new invoice <strong>${esc(invoice.invoiceNumber)}</strong> for <strong>${money(invoice.total, invoice.currency)}</strong>${Number(invoice.paymentFee || 0) > 0 ? " (includes a small payment processing fee - see the attached PDF for the breakdown)" : ""}.</p>`,
+              cta: { label: "View and pay", url: `${process.env.APP_URL || ""}/payment/${invoice.invoiceNumber}` },
+            }),
             attachments: [
               { filename: `invoice_${invoice.invoiceNumber}.pdf`, content: pdfBuffer },
             ],

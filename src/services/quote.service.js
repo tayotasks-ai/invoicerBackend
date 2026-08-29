@@ -8,6 +8,8 @@ const getPagination = require("../utils/pagination");
 const { generateInvoice } = require("../utils/invoice");
 const { sendEmail } = require("../utils/email.util");
 const { getPlan } = require("../config/plans");
+const { buildEmailHtml, esc } = require("../utils/templates/emailLayout");
+const { money } = require("../utils/templates/money");
 
 class QuoteService {
   // Shared shape-building for the PDF renderer - mirrors
@@ -89,7 +91,12 @@ class QuoteService {
           sendEmail({
             to: customer.email,
             subject: `Quote ${quote.quoteNumber}`,
-            html: `<p>Hi ${customer.name || ""},</p><p>You have a new quote <strong>${quote.quoteNumber}</strong> for ${quote.currency} ${Number(quote.total || 0).toFixed(2)}.</p><p>View it here: <a href="${process.env.APP_URL || ""}/quote/${quote.quoteNumber}">${process.env.APP_URL || ""}/quote/${quote.quoteNumber}</a></p>`,
+            html: buildEmailHtml({
+              preheader: `New quote ${quote.quoteNumber} for ${money(quote.total, quote.currency)}.`,
+              heading: `New quote from your supplier`,
+              bodyHtml: `<p style="margin:0;">Hi ${esc(customer.name || "there")}, you have a new quote <strong>${esc(quote.quoteNumber)}</strong> for <strong>${money(quote.total, quote.currency)}</strong>.</p>`,
+              cta: { label: "View quote", url: `${process.env.APP_URL || ""}/quote/${quote.quoteNumber}` },
+            }),
             attachments: [
               { filename: `quote_${quote.quoteNumber}.pdf`, content: pdfBuffer },
             ],
