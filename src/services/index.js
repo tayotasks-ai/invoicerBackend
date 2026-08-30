@@ -8,6 +8,7 @@ const { FirsService } = require('./firs.service');
 const { InventoryService } = require('./inventory.service');
 const { QuoteService } = require('./quote.service');
 const { AccountantService } = require('./accountant.service');
+const { ReportingService } = require('./reporting.service');
 
 module.exports = {
   AuthService,
@@ -19,5 +20,6 @@ module.exports = {
   FirsService,
   InventoryService,
   QuoteService,
-  AccountantService
+  AccountantService,
+  ReportingService
 };

@@ -7,6 +7,7 @@ const customerRoute = require('./customer.route');
 const inventoryRoute = require('./inventory.route');
 const quoteRoute = require('./quote.route');
 const accountantRoute = require('./accountant.route');
+const reportingRoute = require('./reporting.route');
 
 module.exports = {
   authRoute,
@@ -17,5 +18,6 @@ module.exports = {
   customerRoute,
   inventoryRoute,
   quoteRoute,
-  accountantRoute
+  accountantRoute,
+  reportingRoute
 };
