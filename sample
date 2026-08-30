@@ -5,7 +5,17 @@
 # --- Server ---
 PORT=5110
 NODE_ENV=development
-APP_URL=http://localhost:5110
+# The FRONTEND's origin, not this backend's - every link embedded in an
+# email (verify-email, reset-password, payment, quote,
+# accept-accountant-invite - see auth.service.js/invoice.service.js/etc.)
+# is built as `${APP_URL}/that/path`, and a person clicks it in their
+# browser, so it must resolve to the Vue app, not this API server. In prod
+# this is your deployed frontend's URL (e.g. https://invoecr-frontend.vercel.app
+# or a custom domain) - pointing it at the backend's own URL instead makes
+# every one of those links 404 with "Not found", because the backend has no
+# matching route at that bare path (its real routes all live under
+# /api/v1/...).
+APP_URL=http://localhost:5173
 # Business logo/signature uploads (Settings -> Business profile) are stored
 # as base64 data: URIs directly on the entity document - no third-party
 # image host needed, nothing to configure here. Capped at 2MB per file in
