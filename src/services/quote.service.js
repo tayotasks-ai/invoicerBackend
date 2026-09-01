@@ -7,7 +7,7 @@ const bankRepo = require("../repo/bankAccount.repo");
 const getPagination = require("../utils/pagination");
 const { generateInvoice } = require("../utils/invoice");
 const { sendEmail } = require("../utils/email.util");
-const { getPlan } = require("../config/plans");
+const { getPlan, effectivePlanId } = require("../config/plans");
 const { buildEmailHtml, esc } = require("../utils/templates/emailLayout");
 const { money } = require("../utils/templates/money");
 
@@ -42,7 +42,7 @@ class QuoteService {
     const owningEntity = await entityRepository.findById(entity_id);
     abortIf(!owningEntity, httpStatus.BAD_REQUEST, "Invalid Entity Id");
     abortIf(
-      !getPlan(owningEntity.plan).allowQuotes,
+      !getPlan(effectivePlanId(owningEntity)).allowQuotes,
       httpStatus.FORBIDDEN,
       "Proforma invoices & quotes are a Growth-plan feature. Upgrade your plan to create one."
     );

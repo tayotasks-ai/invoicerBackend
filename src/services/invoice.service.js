@@ -12,7 +12,7 @@ const transactionRepo = require("../repo/transaction.repo");
 const bankRepo = require("../repo/bankAccount.repo");
 const { sendEmail } = require("../utils/email.util");
 const crypto = require("crypto");
-const { getPlan } = require("../config/plans");
+const { getPlan, effectivePlanId } = require("../config/plans");
 const { buildEmailHtml, esc, infoRow } = require("../utils/templates/emailLayout");
 const { money } = require("../utils/templates/money");
 const { ReminderService } = require("./reminder.service");
@@ -61,7 +61,7 @@ class InvoiceService {
 
     // Free-tier businesses are capped at a fixed number of invoices/month
     // (see src/config/plans.js) - the core upgrade trigger besides templates.
-    const plan = getPlan(owningEntity.plan);
+    const plan = getPlan(effectivePlanId(owningEntity));
     if (plan.maxInvoicesPerMonth != null) {
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
@@ -183,7 +183,7 @@ class InvoiceService {
       "This invoice is already paid - no reminder needed"
     );
     abortIf(
-      !getPlan(invoice.entity?.plan).allowReminders,
+      !getPlan(effectivePlanId(invoice.entity)).allowReminders,
       httpStatus.FORBIDDEN,
       "Payment reminders are a Growth-plan feature. Upgrade your plan to send one."
     );

@@ -86,8 +86,20 @@ function getPlan(id) {
   return PLANS[id] || PLANS.free;
 }
 
+// Root panel's "flag for full testing" (see entity.model.js's
+// isTestMerchant / admin.service.js) works by having every plan-gate call
+// site resolve the plan through this instead of reading `entity.plan`
+// directly - a flagged merchant is treated as Business tier everywhere,
+// without needing a second parallel set of "is this allowed" checks.
+// Always pass the whole entity (or populated entity ref), not just its
+// `.plan` string, so the flag is visible here.
+function effectivePlanId(entity) {
+  if (entity && entity.isTestMerchant) return 'business';
+  return entity ? entity.plan : undefined;
+}
+
 function listPlans() {
   return Object.values(PLANS);
 }
 
-module.exports = { PLANS, getPlan, listPlans };
+module.exports = { PLANS, getPlan, listPlans, effectivePlanId };

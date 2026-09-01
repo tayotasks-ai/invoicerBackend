@@ -128,6 +128,38 @@ var entitySchema = new Schema({
     reference: { type: String, default: null },
     error: { type: String, default: null },
     createdAt: { type: Date, default: null }
+  },
+  // Root-panel controls (see admin.service.js / views/RootMerchant*.vue).
+  // Neither field is settable from anywhere a business itself can reach -
+  // only the /admin/* routes (Authorization.requireRoot) touch these, and
+  // editEntitySchema (entity.validations.js) doesn't allow either key
+  // through the business's own PATCH /entity endpoint.
+  //
+  // isTestMerchant: unlocks every plan-gated feature for this business
+  // regardless of `plan` (see config/plans.js's effectivePlanId) - for
+  // end-to-end testing a real merchant account without needing them to
+  // actually pay for the Business tier.
+  isTestMerchant: {
+    type: Boolean,
+    default: false
+  },
+  // isSuspended blocks future sign-ins (AuthService.signIn) but does NOT
+  // invalidate an already-issued JWT - a session active at the moment of
+  // suspension keeps working until that token naturally expires (see
+  // JWT_EXPIRES_IN). Deliberate scope: this is a "stop new logins" switch,
+  // not real-time session revocation, which would need a per-request DB
+  // lookup on every authenticated call.
+  isSuspended: {
+    type: Boolean,
+    default: false
+  },
+  suspendedAt: {
+    type: Date,
+    default: null
+  },
+  suspendedReason: {
+    type: String,
+    default: null
   }
 }, {
   timestamps: true,

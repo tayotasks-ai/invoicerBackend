@@ -2,7 +2,7 @@ const invoiceRepo = require('../repo/invoice.repo');
 const { sendWhatsAppTemplate, isConfigured: isWhatsAppConfigured } = require('../utils/whatsapp.util');
 const { sendEmail, isConfigured: isEmailConfigured } = require('../utils/email.util');
 const { money } = require('../utils/templates/money');
-const { getPlan } = require('../config/plans');
+const { getPlan, effectivePlanId } = require('../config/plans');
 const { buildEmailHtml, esc } = require('../utils/templates/emailLayout');
 
 // Only remind for invoices that are actually still owed, and only once
@@ -159,7 +159,7 @@ class ReminderService {
       // above. The manual "send reminder now" button enforces the same
       // thing loudly instead (see InvoiceService.sendReminder), since that's
       // an explicit user action that deserves an explanation.
-      if (!getPlan(invoice.entity?.plan).allowReminders) {
+      if (!getPlan(effectivePlanId(invoice.entity)).allowReminders) {
         skipped++;
         continue;
       }

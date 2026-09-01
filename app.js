@@ -5,7 +5,7 @@ const app = express();
 const ApiError = require('./src/utils/ApiError');
 const httpStatus = require('http-status');
 const cors = require('cors');
-const { authRoute, invoiceRoute, utilsRoute, entityRoute, webHookRoute, customerRoute, inventoryRoute, quoteRoute, accountantRoute, reportingRoute, recurringInvoiceRoute, expenseRoute } = require('./src/routes');
+const { authRoute, invoiceRoute, utilsRoute, entityRoute, webHookRoute, customerRoute, inventoryRoute, quoteRoute, accountantRoute, reportingRoute, recurringInvoiceRoute, expenseRoute, adminRoute } = require('./src/routes');
 const { errorConverter, errorHandler } = require('./src/middleware/error');
 const fileUpload = require("express-fileupload");
 const dbConnect = require('./src/config/db.config');
@@ -57,6 +57,7 @@ app.use('/api/v1', accountantRoute);
 app.use('/api/v1', reportingRoute);
 app.use('/api/v1', recurringInvoiceRoute);
 app.use('/api/v1', expenseRoute);
+app.use('/api/v1', adminRoute);
 
 // Catch-all for 404 errors
 app.use((req, res, next) => {

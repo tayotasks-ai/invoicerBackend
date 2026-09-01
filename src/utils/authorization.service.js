@@ -19,15 +19,18 @@ class Authorization {
         // Fallback to 1 hour
     }
 
-    // Generate a JWT for a user
-    static generateToken(payload) {
+    // Generate a JWT for a user. `customExpiresIn` overrides the default
+    // JWT_EXPIRES_IN for callers that want a shorter-lived token than a
+    // normal business session.
+    static generateToken(payload, customExpiresIn) {
         try {
             // Sign the token with the payload, secret, and expiration
-            const token = jwt.sign(payload, secret, { expiresIn: expiresIn });
+            const tokenExpiresIn = customExpiresIn || expiresIn;
+            const token = jwt.sign(payload, secret, { expiresIn: tokenExpiresIn });
             return {
                 success: true,
                 token: `${token}`, // Include "Bearer" prefix (common convention)
-                expiresIn
+                expiresIn: tokenExpiresIn
             };
         } catch (error) {
             console.error('Error generating JWT:', error.message);
@@ -119,6 +122,33 @@ class Authorization {
             }
         }
 
+        next();
+    }
+
+    // Root panel access (see admin.route.js) is deliberately NOT a separate
+    // login/token type - there's no signup, no admin accounts table, and no
+    // parallel auth domain to keep straight. Root is just an ordinary
+    // business account (sign in the normal way at /sign-in) whose email
+    // happens to be on the ROOT_ADMIN_EMAILS allowlist. That keeps this a
+    // single trust model: one token type, one session, one place
+    // (entityService.getMe) that tells the frontend whether to show the
+    // Root link at all.
+    static isRootEmail(email) {
+        const allowlist = (process.env.ROOT_ADMIN_EMAILS || '')
+            .split(',')
+            .map((e) => e.trim().toLowerCase())
+            .filter(Boolean);
+        return !!email && allowlist.includes(String(email).trim().toLowerCase());
+    }
+
+    // Route guard for /admin/* - must run AFTER authenticateToken (it reads
+    // req.user, which authenticateToken attaches). Rejects anyone whose
+    // email isn't on the allowlist, including a perfectly valid, signed-in
+    // business session - being logged in is necessary but not sufficient.
+    static requireRoot(req, res, next) {
+        if (!Authorization.isRootEmail(req.user?.email)) {
+            return res.status(403).json({ error: 'Root access required' });
+        }
         next();
     }
 }

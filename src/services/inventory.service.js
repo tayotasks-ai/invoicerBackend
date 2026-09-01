@@ -2,7 +2,7 @@ const httpStatus = require("http-status").default;
 const { abortIf } = require("../utils/responder");
 const inventoryRepo = require("../repo/inventoryItem.repo");
 const entityRepository = require("../repo/entity.repo");
-const { getPlan } = require("../config/plans");
+const { getPlan, effectivePlanId } = require("../config/plans");
 
 class InventoryService {
   static listInventory = async (entity_id, filters = {}) => {
@@ -21,7 +21,7 @@ class InventoryService {
     const owningEntity = await entityRepository.findById(entity_id);
     abortIf(!owningEntity, httpStatus.BAD_REQUEST, "Invalid Entity Id");
     abortIf(
-      !getPlan(owningEntity.plan).allowInventory,
+      !getPlan(effectivePlanId(owningEntity)).allowInventory,
       httpStatus.FORBIDDEN,
       "Inventory & stock tracking is a Business-plan feature. Upgrade your plan to add inventory items."
     );

@@ -3,7 +3,7 @@ const { abortIf } = require("../utils/responder");
 const accountantAccessRepo = require("../repo/accountantAccess.repo");
 const entityRepository = require("../repo/entity.repo");
 const { sendEmail } = require("../utils/email.util");
-const { getPlan } = require("../config/plans");
+const { getPlan, effectivePlanId } = require("../config/plans");
 const { buildEmailHtml, esc } = require("../utils/templates/emailLayout");
 
 class AccountantService {
@@ -20,7 +20,7 @@ class AccountantService {
     const business = await entityRepository.findById(businessEntityId);
     abortIf(!business, httpStatus.BAD_REQUEST, "Invalid Entity Id");
     abortIf(
-      !getPlan(business.plan).allowAccountantAccess,
+      !getPlan(effectivePlanId(business)).allowAccountantAccess,
       httpStatus.FORBIDDEN,
       "Accountant/bookkeeper access is a Business-plan feature. Upgrade your plan to invite one."
     );

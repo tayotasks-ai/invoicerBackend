@@ -13,7 +13,7 @@ const Authorization = require("../utils/authorization.service");
 const { getTheme, listThemes, DEFAULT_THEME_ID } = require("../utils/templates/themes");
 const { buildSampleInvoiceData } = require("../utils/sampleInvoiceData");
 const { generateInvoice } = require("../utils/invoice");
-const { getPlan, listPlans } = require("../config/plans");
+const { getPlan, listPlans, effectivePlanId } = require("../config/plans");
 const { sendEmail } = require("../utils/email.util");
 const { buildEmailHtml, infoRow, esc } = require("../utils/templates/emailLayout");
 const SeerbitUtil = require("../utils/seerbit.utils");
@@ -113,7 +113,7 @@ class EntityService {
     // unless the business's plan allows it (see src/config/plans.js).
     if (data.data.invoiceTemplate) {
       const theme = getTheme(data.data.invoiceTemplate);
-      const plan = getPlan(entity.plan);
+      const plan = getPlan(effectivePlanId(entity));
       abortIf(
         theme.tier === "premium" && !plan.allowPremiumTemplates,
         httpStatus.FORBIDDEN,
@@ -135,7 +135,7 @@ class EntityService {
   static listTemplates = async (userId) => {
     const entity = await entityRepository.findById(userId);
     abortIf(!entity, httpStatus.BAD_REQUEST, "Invalid Entity Id");
-    const plan = getPlan(entity.plan);
+    const plan = getPlan(effectivePlanId(entity));
     const selected = entity.invoiceTemplate || DEFAULT_THEME_ID;
     return listThemes().map((theme) => ({
       ...theme,
@@ -151,7 +151,7 @@ class EntityService {
     const entity = await entityRepository.findById(userId);
     abortIf(!entity, httpStatus.BAD_REQUEST, "Invalid Entity Id");
     const theme = getTheme(templateId);
-    const plan = getPlan(entity.plan);
+    const plan = getPlan(effectivePlanId(entity));
     abortIf(
       theme.tier === "premium" && !plan.allowPremiumTemplates,
       httpStatus.FORBIDDEN,
@@ -169,7 +169,7 @@ class EntityService {
   static getMe = async (userId) => {
     const entity = await entityRepository.findById(userId);
     abortIf(!entity, httpStatus.NOT_FOUND, "Entity not found");
-    const plan = getPlan(entity.plan);
+    const plan = getPlan(effectivePlanId(entity));
 
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
@@ -182,6 +182,12 @@ class EntityService {
     return {
       ...entity.toJSON(),
       planDetails: { ...plan, invoicesThisMonth },
+      // Computed, not stored - true only when this account's email is on
+      // the ROOT_ADMIN_EMAILS allowlist (see authorization.service.js).
+      // This is the one place that tells the frontend whether to show the
+      // Root link at all; the actual /admin/* routes re-check it
+      // server-side regardless of what this says.
+      isRoot: Authorization.isRootEmail(entity.email),
     };
   };
 

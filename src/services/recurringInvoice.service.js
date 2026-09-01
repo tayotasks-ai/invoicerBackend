@@ -3,7 +3,7 @@ const customerRepository = require("../repo/customer.repo");
 const entityRepository = require("../repo/entity.repo");
 const { abortIf } = require("../utils/responder");
 const httpStatus = require("http-status").default;
-const { getPlan } = require("../config/plans");
+const { getPlan, effectivePlanId } = require("../config/plans");
 const { FREQUENCIES, addInterval } = require("../utils/recurringFrequency.util");
 const { InvoiceService } = require("./invoice.service");
 
@@ -21,7 +21,7 @@ class RecurringInvoiceService {
     // and quotes (see config/plans.js) - enforced here at the service entry
     // point, matching how every other plan-gated feature in this app does it.
     abortIf(
-      !getPlan(owningEntity.plan).allowRecurringInvoices,
+      !getPlan(effectivePlanId(owningEntity)).allowRecurringInvoices,
       httpStatus.FORBIDDEN,
       "Recurring invoices are available on the Growth plan and above. Upgrade your plan to set one up."
     );
@@ -195,7 +195,7 @@ class RecurringInvoiceService {
       // don't generate, but don't leave it stuck re-querying forever either;
       // push nextRunAt forward so it's revisited next cycle instead of
       // showing up in this job's "due" list every single day.
-      if (!getPlan(schedule.entity?.plan).allowRecurringInvoices) {
+      if (!getPlan(effectivePlanId(schedule.entity)).allowRecurringInvoices) {
         await recurringInvoiceRepo.update(schedule._id, {
           nextRunAt: addInterval(schedule.nextRunAt, schedule.frequency),
         });

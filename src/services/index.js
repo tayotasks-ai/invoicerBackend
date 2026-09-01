@@ -11,6 +11,7 @@ const { AccountantService } = require('./accountant.service');
 const { ReportingService } = require('./reporting.service');
 const { RecurringInvoiceService } = require('./recurringInvoice.service');
 const { ExpenseService } = require('./expense.service');
+const { AdminService } = require('./admin.service');
 
 module.exports = {
   AuthService,
@@ -25,5 +26,6 @@ module.exports = {
   AccountantService,
   ReportingService,
   RecurringInvoiceService,
-  ExpenseService
+  ExpenseService,
+  AdminService
 };

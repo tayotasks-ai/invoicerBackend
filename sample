@@ -29,6 +29,19 @@ MONGO_DB_PASSWORD=
 JWT_SECRET=
 JWT_EXPIRES_IN=24h
 
+# --- Root admin panel (/root in the frontend, src/routes/admin.route.js) ---
+# No separate login for this - root is just your ordinary invoecr business
+# account (sign in the normal way at /sign-in), except its email is on this
+# list. Comma-separated, no spaces needed around commas. Whoever's email
+# matches sees a "Root" link in their sidebar leading to /root: lists every
+# merchant, lets you flag one to unlock every plan feature for testing
+# (isTestMerchant on entity.model.js) without paying for it, suspend/
+# unsuspend an account, and manually move a merchant onto a different plan
+# (bypassing Paystack - useful for comps or fixing a stuck webhook). Until
+# this is set, nobody can reach /admin/* regardless of who they are or what
+# they know - see Authorization.isRootEmail/requireRoot.
+ROOT_ADMIN_EMAILS=
+
 # --- Paystack ---
 PAYSTACK_SECRET_KEY=
 PAYSTACK_URL=https://api.paystack.co

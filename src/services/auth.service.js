@@ -82,6 +82,16 @@ class AuthService {
   static signIn = async (email, password) => {
     const entity = await entityRepository.findOne({ query: { email } });
     abortIf(!entity, httpStatus.NOT_FOUND, "Entity not found");
+    // Checked before the password compare (see entity.model.js's
+    // isSuspended comment for the exact scope: this blocks new sign-ins
+    // only, not an already-active session's existing token) so a suspended
+    // owner gets a clear reason instead of assuming they mistyped their
+    // password.
+    abortIf(
+      entity.isSuspended,
+      httpStatus.FORBIDDEN,
+      "This account has been suspended. Contact support if you believe this is a mistake."
+    );
     const isMatch = await bcrypt.compare(password, entity.password);
     abortIf(!isMatch, httpStatus.BAD_REQUEST, "Invalid credentials");
     const { token } = Authorization.generateToken({
