@@ -18,6 +18,9 @@ router.post(
   ExpenseController.requestExpense
 );
 router.get(`${BASE}`, Authorization.authenticateToken, ExpenseController.getAllExpenses);
+// Stat cards for the Expenses list - must come before the /:code route
+// below, or Express would match "stats" as a :code param instead.
+router.get(`${BASE}/stats`, Authorization.authenticateToken, ExpenseController.getExpenseStats);
 
 // Unauthenticated: the link emailed to the vendor, and their one-time
 // submission from that same page - same pattern as quote's public/:code.

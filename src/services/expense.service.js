@@ -53,6 +53,44 @@ class ExpenseService {
     return expenseRepository.findAll({ query, sort: { createdAt: -1 } });
   };
 
+  // Backs the stat cards at the top of the Expenses list - three numbers
+  // that map directly onto the request lifecycle (see the status enum
+  // comment on expense.model.js): how many are still waiting on the vendor,
+  // how much is sitting submitted and ready to pay, and how much has
+  // actually gone out this month. Deliberately simple find()+reduce rather
+  // than an aggregation pipeline - expense volume for one business is never
+  // going to be large enough for that to matter, and this reads more plainly.
+  static getExpenseStats = async (entity_id) => {
+    const now = new Date();
+    const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [pendingCount, submittedExpenses, paidThisMonthExpenses] = await Promise.all([
+      expenseRepository.countDocuments({ entity: entity_id, status: "pending" }),
+      expenseRepository.findAll({
+        query: { entity: entity_id, status: "submitted" },
+        select: "amount currency",
+      }),
+      expenseRepository.findAll({
+        query: { entity: entity_id, status: "paid", paidAt: { $gte: startOfThisMonth } },
+        select: "amount currency",
+      }),
+    ]);
+
+    const sumAmount = (expenses) => expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+    // One representative currency for display, same simplification as
+    // ReportingService.getOverview - whichever of these records has one,
+    // defaulting to NGN for a business with no submitted/paid expenses yet.
+    const currency = submittedExpenses[0]?.currency || paidThisMonthExpenses[0]?.currency || "NGN";
+
+    return {
+      currency,
+      pending: { count: pendingCount },
+      submitted: { count: submittedExpenses.length, total: sumAmount(submittedExpenses) },
+      paidThisMonth: { count: paidThisMonthExpenses.length, total: sumAmount(paidThisMonthExpenses) },
+    };
+  };
+
   static getExpenseByCode = async (code, entity_id) => {
     const expense = await expenseRepository.findOne({ query: { code, entity: entity_id } });
     abortIf(!expense, httpStatus.NOT_FOUND, "Expense not found");

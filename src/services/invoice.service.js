@@ -129,21 +129,22 @@ class InvoiceService {
     // way to see and pay it. Never let a failed/unconfigured email block
     // invoice creation itself.
     if (customer.email && !options.skipEmail) {
+      const businessName = owningEntity.name || "your supplier";
       InvoiceService._pdfDataFor(invoice, entity_id)
         .then((pdfData) => generateInvoice(pdfData))
         .then((pdfBuffer) =>
           sendEmail({
             to: customer.email,
-            subject: `Invoice ${invoice.invoiceNumber}`,
+            subject: `Invoice ${invoice.invoiceNumber} from ${businessName}`,
             // The small "(includes a payment processing fee)" aside only
             // appears when paymentFee > 0, so customers aren't left
             // wondering why this number doesn't match a total they may have
             // already seen quoted verbally - the itemized PDF attached below
             // spells out the exact fee amount as its own line.
             html: buildEmailHtml({
-              preheader: `New invoice ${invoice.invoiceNumber} for ${money(invoice.total, invoice.currency)}.`,
-              heading: "You have a new invoice",
-              bodyHtml: `<p style="margin:0;">Hi ${esc(customer.name || "there")}, you have a new invoice <strong>${esc(invoice.invoiceNumber)}</strong> for <strong>${money(invoice.total, invoice.currency)}</strong>${Number(invoice.paymentFee || 0) > 0 ? " (includes a small payment processing fee - see the attached PDF for the breakdown)" : ""}.</p>`,
+              preheader: `New invoice ${invoice.invoiceNumber} from ${businessName} for ${money(invoice.total, invoice.currency)}.`,
+              heading: `You have a new invoice from ${esc(businessName)}`,
+              bodyHtml: `<p style="margin:0;">Hi ${esc(customer.name || "there")}, <strong>${esc(businessName)}</strong> sent you a new invoice <strong>${esc(invoice.invoiceNumber)}</strong> for <strong>${money(invoice.total, invoice.currency)}</strong>${Number(invoice.paymentFee || 0) > 0 ? " (includes a small payment processing fee - see the attached PDF for the breakdown)" : ""}.</p>`,
               cta: { label: "View and pay", url: `${process.env.APP_URL || ""}/payment/${invoice.invoiceNumber}` },
             }),
             attachments: [
@@ -637,7 +638,10 @@ class InvoiceService {
   static applyPayment = async (invoiceId, amountJustPaid) => {
     const invoice = await invoiceRepository.findOne({
       query: { _id: invoiceId },
-      populate: [{ path: "customer", select: "name email" }],
+      populate: [
+        { path: "customer", select: "name email" },
+        { path: "entity", select: "name" },
+      ],
     });
     if (!invoice) return null;
 
@@ -652,13 +656,14 @@ class InvoiceService {
     try {
       if (invoice.customer?.email) {
         const balanceDue = Math.max(total - amountPaid, 0);
+        const businessName = invoice.entity?.name || "your supplier";
         await sendEmail({
           to: invoice.customer.email,
-          subject: `Payment received for invoice ${invoice.invoiceNumber}`,
+          subject: `Payment received for invoice ${invoice.invoiceNumber} - ${businessName}`,
           html: buildEmailHtml({
-            preheader: `We've received your payment for invoice ${invoice.invoiceNumber}.`,
-            heading: "Payment received",
-            bodyHtml: `<p style="margin:0 0 10px;">Hi ${esc(invoice.customer.name || "there")}, we've received your payment for invoice <strong>${esc(invoice.invoiceNumber)}</strong>.</p>
+            preheader: `${businessName} has received your payment for invoice ${invoice.invoiceNumber}.`,
+            heading: `Payment received by ${esc(businessName)}`,
+            bodyHtml: `<p style="margin:0 0 10px;">Hi ${esc(invoice.customer.name || "there")}, <strong>${esc(businessName)}</strong> has received your payment for invoice <strong>${esc(invoice.invoiceNumber)}</strong>.</p>
 ${infoRow("Amount paid", money(amountJustPaid, invoice.currency))}
 ${status === "paid" ? infoRow("Status", "Fully paid") : infoRow("Balance remaining", money(balanceDue, invoice.currency))}`,
             footnote: "Thank you!",

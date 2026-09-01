@@ -85,16 +85,17 @@ class QuoteService {
     // Best-effort: email the quote to the customer, same non-blocking
     // pattern as invoice creation.
     if (customer.email) {
+      const businessName = owningEntity.name || "your supplier";
       QuoteService._pdfDataFor(quote, entity_id)
         .then((pdfData) => generateInvoice(pdfData))
         .then((pdfBuffer) =>
           sendEmail({
             to: customer.email,
-            subject: `Quote ${quote.quoteNumber}`,
+            subject: `Quote ${quote.quoteNumber} from ${businessName}`,
             html: buildEmailHtml({
-              preheader: `New quote ${quote.quoteNumber} for ${money(quote.total, quote.currency)}.`,
-              heading: `New quote from your supplier`,
-              bodyHtml: `<p style="margin:0;">Hi ${esc(customer.name || "there")}, you have a new quote <strong>${esc(quote.quoteNumber)}</strong> for <strong>${money(quote.total, quote.currency)}</strong>.</p>`,
+              preheader: `New quote ${quote.quoteNumber} from ${businessName} for ${money(quote.total, quote.currency)}.`,
+              heading: `New quote from ${esc(businessName)}`,
+              bodyHtml: `<p style="margin:0;">Hi ${esc(customer.name || "there")}, <strong>${esc(businessName)}</strong> sent you a new quote <strong>${esc(quote.quoteNumber)}</strong> for <strong>${money(quote.total, quote.currency)}</strong>.</p>`,
               cta: { label: "View quote", url: `${process.env.APP_URL || ""}/quote/${quote.quoteNumber}` },
             }),
             attachments: [

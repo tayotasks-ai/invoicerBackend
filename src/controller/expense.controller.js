@@ -15,6 +15,12 @@ class ExpenseController {
     return successResponse(req, res, expenses, 'Operation Successful');
   });
 
+  static getExpenseStats = catchAsync(async (req, res) => {
+    const user = req.user;
+    const stats = await ExpenseService.getExpenseStats(user.id);
+    return successResponse(req, res, stats, 'Operation Successful');
+  });
+
   static getExpenseByCode = catchAsync(async (req, res) => {
     const user = req.user;
     const expense = await ExpenseService.getExpenseByCode(req.params.code, user.id);

@@ -38,6 +38,20 @@ function pctChange(current, previous) {
   return Number((((current - previous) / previous) * 100).toFixed(1));
 }
 
+// Same idea as pctChange, but for a figure that can go negative (net cash
+// flow = collected - expenses paid, unlike every other figure on this
+// dashboard which is always >= 0). Once `previous` is zero or negative,
+// pctChange's ratio stops meaning "improved/worsened" - dividing by a
+// negative baseline flips the sign relative to the real change (e.g. -100 ->
+// +50 is a genuine improvement, but (50 - -100) / -100 * 100 reads as -150%).
+// Rather than show a number that lies about direction, this falls back to
+// null ("no comparable baseline") whenever last month wasn't a clean
+// positive baseline - StatCard already renders null as a neutral dash.
+function netChangePct(current, previous) {
+  if (previous <= 0) return null;
+  return pctChange(current, previous);
+}
+
 function daysBetween(a, b) {
   return Math.floor((a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24));
 }
@@ -62,13 +76,18 @@ class ReportingService {
   // invoices/transactions but never mutates either, and every number here is
   // a read-only rollup rather than part of the invoice lifecycle.
   //
-  // Four pieces, fetched in parallel then combined in JS (kept out of the
+  // Five pieces, fetched in parallel then combined in JS (kept out of the
   // aggregation pipelines themselves so the logic here is easy to follow and
   // to unit-test without a live Mongo instance):
   //   - revenueTrend: last 12 months, collected (money actually received)
   //     vs invoiced (money billed), one point per month.
-  //   - cashFlow: this month vs last month collected/invoiced (with %
-  //     change), plus right-now snapshots of outstanding and overdue.
+  //   - cashFlowTrend: last 12 months, inflow (same "collected" figure as
+  //     revenueTrend) vs outflow (expenses actually paid) vs net, one point
+  //     per month - the money-in-vs-money-out view revenueTrend alone can't
+  //     answer, since it never looks at expenses at all.
+  //   - cashFlow: this month vs last month collected/invoiced/expenses paid
+  //     (with % change), net cash flow, plus right-now snapshots of
+  //     outstanding and overdue.
   //   - topCustomers: the 5 customers who've paid the most, all-time.
   //   - aging: unpaid invoices bucketed by how overdue they are.
   //
@@ -88,6 +107,7 @@ class ReportingService {
     const [
       collectedByMonthRaw,
       invoicedByMonthRaw,
+      expensesPaidByMonthRaw,
       unpaidInvoices,
       topCustomersRaw,
       currencyInvoice,
@@ -122,6 +142,27 @@ class ReportingService {
           $group: {
             _id: { $dateToString: { format: "%Y-%m", date: "$issueDate" } },
             total: { $sum: "$total" },
+          },
+        },
+      ]),
+      // Money actually paid out to vendors (expenses in the 'paid' status),
+      // grouped by the month it was paid in - the outflow half of cash flow.
+      // Mirrors the collected-by-month query above; deliberately keyed off
+      // `paidAt` (when the money left), not `createdAt` (when the request
+      // was first sent) or `submittedAt` (when the vendor filled in their
+      // details) - neither of those is when cash actually moved.
+      expenseRepository.aggregate([
+        {
+          $match: {
+            entity: entityObjectId,
+            status: "paid",
+            paidAt: { $gte: startOfTrendWindow },
+          },
+        },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m", date: "$paidAt" } },
+            total: { $sum: "$amount" },
           },
         },
       ]),
@@ -172,10 +213,28 @@ class ReportingService {
       });
     }
 
+    // --- Cash flow trend: same 12 fixed, zero-filled months as revenueTrend
+    // - inflow reuses collectedByMonth (already computed above, no second
+    // query for the same figure), outflow is the expenses-paid map just
+    // fetched, net is simply their difference per month.
+    const expensesPaidByMonth = new Map(expensesPaidByMonthRaw.map((r) => [r._id, r.total]));
+    const cashFlowTrend = [];
+    for (let i = TREND_MONTHS - 1; i >= 0; i--) {
+      const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = monthKey(monthDate);
+      const inflow = collectedByMonth.get(key) || 0;
+      const outflow = expensesPaidByMonth.get(key) || 0;
+      cashFlowTrend.push({ month: key, label: monthLabel(monthDate), inflow, outflow, net: inflow - outflow });
+    }
+
     // --- Cash flow: this month vs last month is just two points already
     // sitting in the trend series above - no need to query again.
     const thisMonthPoint = revenueTrend[revenueTrend.length - 1];
     const lastMonthPoint = revenueTrend[revenueTrend.length - 2] || { collected: 0, invoiced: 0 };
+    const thisMonthOutflow = cashFlowTrend[cashFlowTrend.length - 1].outflow;
+    const lastMonthOutflow = cashFlowTrend[cashFlowTrend.length - 2]?.outflow || 0;
+    const thisMonthNet = thisMonthPoint.collected - thisMonthOutflow;
+    const lastMonthNet = lastMonthPoint.collected - lastMonthOutflow;
 
     let outstandingTotal = 0;
     let overdueTotal = 0;
@@ -207,6 +266,19 @@ class ReportingService {
       },
       outstanding: { total: outstandingTotal, count: unpaidInvoices.length },
       overdue: { total: overdueTotal, count: overdueCount },
+      expensesPaid: {
+        current: thisMonthOutflow,
+        previous: lastMonthOutflow,
+        changePct: pctChange(thisMonthOutflow, lastMonthOutflow),
+      },
+      // Net cash flow = money collected minus money paid out, this month.
+      // The one figure that actually answers "is the business healthy right
+      // now" - collected and expensesPaid alone each only tell half of it.
+      net: {
+        current: thisMonthNet,
+        previous: lastMonthNet,
+        changePct: netChangePct(thisMonthNet, lastMonthNet),
+      },
     };
 
     const aging = ["current", "1-30", "31-60", "61-90", "90+"].map((bucket) => ({
@@ -241,6 +313,7 @@ class ReportingService {
     return {
       currency: currencyInvoice?.currency || "NGN",
       revenueTrend,
+      cashFlowTrend,
       cashFlow,
       topCustomers,
       aging,
