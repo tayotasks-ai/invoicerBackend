@@ -13,11 +13,12 @@ const bankRepo = require("../repo/bankAccount.repo");
 const { sendEmail } = require("../utils/email.util");
 const crypto = require("crypto");
 const { getPlan } = require("../config/plans");
-const { buildEmailHtml, esc } = require("../utils/templates/emailLayout");
+const { buildEmailHtml, esc, infoRow } = require("../utils/templates/emailLayout");
 const { money } = require("../utils/templates/money");
 const { ReminderService } = require("./reminder.service");
 const { FirsService } = require("./firs.service");
 const { InventoryService } = require("./inventory.service");
+const { toCsv } = require("../utils/csv.util");
 
 class InvoiceService {
   // Shared shape-building for the PDF renderer: pulls in the business's
@@ -48,8 +49,13 @@ class InvoiceService {
     };
   };
 
-  // Create a new invoice
-  static createInvoice = async (data, entity_id) => {
+  // Create a new invoice. `options.skipEmail` is used by
+  // RecurringInvoiceService when auto-generating a cycle's draft - those are
+  // meant to sit for the business to review before sending, not go straight
+  // to the customer's inbox the moment they're created (see
+  // RecurringInvoiceService._generateOne). Every other call site behaves
+  // exactly as before.
+  static createInvoice = async (data, entity_id, options = {}) => {
     const owningEntity = await entityRepository.findById(entity_id);
     abortIf(!owningEntity, httpStatus.BAD_REQUEST, "Invalid Entity Id");
 
@@ -122,7 +128,7 @@ class InvoiceService {
     // Best-effort: email the invoice to the customer so they actually have a
     // way to see and pay it. Never let a failed/unconfigured email block
     // invoice creation itself.
-    if (customer.email) {
+    if (customer.email && !options.skipEmail) {
       InvoiceService._pdfDataFor(invoice, entity_id)
         .then((pdfData) => generateInvoice(pdfData))
         .then((pdfBuffer) =>
@@ -379,6 +385,58 @@ class InvoiceService {
     };
   };
 
+  // Every matching invoice as a CSV string, for a business's own records or
+  // to hand to an accountant who isn't using invoecr's accountant-access
+  // feature. Capped at 5000 rows - comfortably past what any real SME
+  // invoice volume would hit, just a safety net against an unbounded query.
+  static exportInvoicesCsv = async (entity_id, filters = {}) => {
+    const { status, search, startDate, endDate } = filters;
+    const matchStage = { entity: new mongoose.Types.ObjectId(entity_id) };
+    if (status) matchStage.status = { $in: status.split(",") };
+    if (startDate || endDate) {
+      matchStage.issueDate = {};
+      if (startDate) matchStage.issueDate.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        matchStage.issueDate.$lte = end;
+      }
+    }
+
+    const pipeline = [
+      { $match: matchStage },
+      { $lookup: { from: "customers", localField: "customer", foreignField: "_id", as: "customer" } },
+      { $unwind: "$customer" },
+    ];
+    if (search) {
+      pipeline.push({
+        $match: {
+          $or: [
+            { invoiceNumber: { $regex: search, $options: "i" } },
+            { "customer.name": { $regex: search, $options: "i" } },
+          ],
+        },
+      });
+    }
+    pipeline.push({ $sort: { issueDate: -1 } }, { $limit: 5000 });
+
+    const invoices = await invoiceRepository.aggregate(pipeline);
+    return toCsv(invoices, [
+      { header: "Invoice Number", key: "invoiceNumber" },
+      { header: "Status", key: "status" },
+      { header: "Customer", value: (r) => r.customer?.name || "" },
+      { header: "Customer Email", value: (r) => r.customer?.email || "" },
+      { header: "Issue Date", value: (r) => (r.issueDate ? new Date(r.issueDate).toISOString().slice(0, 10) : "") },
+      { header: "Due Date", value: (r) => (r.dueDate ? new Date(r.dueDate).toISOString().slice(0, 10) : "") },
+      { header: "Currency", key: "currency" },
+      { header: "Subtotal", key: "subtotal" },
+      { header: "Tax", key: "tax" },
+      { header: "Total", key: "total" },
+      { header: "Amount Paid", value: (r) => r.amountPaid || 0 },
+      { header: "Balance Due", value: (r) => Math.max(Number(r.total || 0) - Number(r.amountPaid || 0), 0) },
+    ]);
+  };
+
   // Get a single invoice by ID
   static getInvoiceById = async (code, entity_id) => {
     const invoice = await invoiceRepository.findOne({
@@ -564,6 +622,165 @@ class InvoiceService {
       paymentResponse.message
     );
     return paymentResponse;
+  };
+
+  // Applies a confirmed payment to an invoice - increments amountPaid,
+  // flips status to paid/partially-paid, and sends the same "payment
+  // received" receipt email regardless of how the payment got here. Shared
+  // by both payment paths so the math and the customer-facing email never
+  // drift apart between them:
+  //   - UtilsService.webhook, once Paystack confirms a charge.
+  //   - InvoiceService.recordManualPayment, for a bank transfer/cash/POS
+  //     payment the business attests to themselves.
+  // Returns the updated invoice, or null if the invoice doesn't exist
+  // (defensive - callers already validate this in the normal case).
+  static applyPayment = async (invoiceId, amountJustPaid) => {
+    const invoice = await invoiceRepository.findOne({
+      query: { _id: invoiceId },
+      populate: [{ path: "customer", select: "name email" }],
+    });
+    if (!invoice) return null;
+
+    const amountPaid = Number(invoice.amountPaid || 0) + Number(amountJustPaid || 0);
+    const total = Number(invoice.total || 0);
+    const status = amountPaid >= total ? "paid" : "partially-paid";
+    const updated = await invoiceRepository.update(invoiceId, { amountPaid, status });
+
+    // Best-effort - never let a mail failure affect the caller (the
+    // Paystack webhook already got its 200; the manual-recording request
+    // shouldn't fail just because email is unconfigured).
+    try {
+      if (invoice.customer?.email) {
+        const balanceDue = Math.max(total - amountPaid, 0);
+        await sendEmail({
+          to: invoice.customer.email,
+          subject: `Payment received for invoice ${invoice.invoiceNumber}`,
+          html: buildEmailHtml({
+            preheader: `We've received your payment for invoice ${invoice.invoiceNumber}.`,
+            heading: "Payment received",
+            bodyHtml: `<p style="margin:0 0 10px;">Hi ${esc(invoice.customer.name || "there")}, we've received your payment for invoice <strong>${esc(invoice.invoiceNumber)}</strong>.</p>
+${infoRow("Amount paid", money(amountJustPaid, invoice.currency))}
+${status === "paid" ? infoRow("Status", "Fully paid") : infoRow("Balance remaining", money(balanceDue, invoice.currency))}`,
+            footnote: "Thank you!",
+          }),
+        });
+      }
+    } catch (emailError) {
+      console.error("Failed to send payment receipt:", emailError.message);
+    }
+
+    return updated;
+  };
+
+  // Records a payment the business collected outside Paystack entirely - a
+  // direct bank transfer, cash, or POS in person. Common in Nigeria, where
+  // plenty of customers pay a business's account number directly rather
+  // than go through an online checkout. Self-attested (there's no
+  // processor confirming this the way Paystack's webhook does), so it's
+  // stamped with who recorded it and can be voided later if entered in
+  // error - see voidManualPayment.
+  static recordManualPayment = async (code, entity_id, { amount, method, reference, note } = {}) => {
+    const invoice = await invoiceRepository.findOne({
+      query: { invoiceNumber: code, entity: entity_id },
+      populate: [{ path: "customer", select: "name email" }],
+    });
+    abortIf(!invoice, httpStatus.NOT_FOUND, "Invoice not found");
+    abortIf(
+      invoice.status === "draft",
+      httpStatus.BAD_REQUEST,
+      "Send this invoice before recording a payment against it"
+    );
+    const balanceDue = Math.max(
+      Number(invoice.total || 0) - Number(invoice.amountPaid || 0),
+      0
+    );
+    abortIf(balanceDue <= 0, httpStatus.BAD_REQUEST, "Invoice is already paid");
+    abortIf(!amount || amount <= 0, httpStatus.BAD_REQUEST, "Amount must be greater than zero");
+    abortIf(
+      amount > balanceDue,
+      httpStatus.BAD_REQUEST,
+      "Amount cannot be greater than the remaining balance due"
+    );
+    const validMethods = ["bank_transfer", "cash", "pos", "other"];
+    abortIf(
+      !validMethods.includes(method),
+      httpStatus.BAD_REQUEST,
+      `Method must be one of: ${validMethods.join(", ")}`
+    );
+
+    // Same "always NGN on the transaction record" simplification
+    // initiatePayment already uses for Paystack transactions (see its own
+    // comment) - keeps manual and Paystack transactions consistent with
+    // each other rather than introducing a second, different convention.
+    // The receipt email above still displays the invoice's real currency.
+    const transaction = await transactionRepo.create({
+      customer: invoice.customer._id,
+      entity: entity_id,
+      invoice: invoice._id,
+      amount,
+      currency: "NGN",
+      type: "PAYMENT",
+      status: "SUCCESS",
+      channel: "MANUAL",
+      method,
+      reference: reference || crypto.randomUUID().split("-").join("").slice(0, 17),
+      description: note || `Manually recorded ${method.replace("_", " ")} payment`,
+      recordedBy: entity_id,
+      processedAt: new Date(),
+    });
+
+    const updatedInvoice = await InvoiceService.applyPayment(invoice._id, amount);
+    return { invoice: updatedInvoice, transaction };
+  };
+
+  // Undoes a manually-recorded payment - the correction path for a mistake
+  // (wrong amount, wrong invoice, entered twice). Deliberately can't touch
+  // a Paystack/Flutterwave transaction - those are verified by the
+  // processor, so "voiding" one here would just make the app's records
+  // disagree with the money that actually moved.
+  static voidManualPayment = async (code, transactionId, entity_id) => {
+    const invoice = await invoiceRepository.findOne({
+      query: { invoiceNumber: code, entity: entity_id },
+    });
+    abortIf(!invoice, httpStatus.NOT_FOUND, "Invoice not found");
+    const transaction = await transactionRepo.findOne({
+      query: { _id: transactionId, invoice: invoice._id, entity: entity_id },
+    });
+    abortIf(!transaction, httpStatus.NOT_FOUND, "Transaction not found");
+    abortIf(
+      transaction.channel !== "MANUAL",
+      httpStatus.BAD_REQUEST,
+      "Only manually recorded payments can be voided"
+    );
+    abortIf(
+      transaction.status !== "SUCCESS",
+      httpStatus.BAD_REQUEST,
+      "This payment has already been voided"
+    );
+
+    const amountPaid = Math.max(
+      Number(invoice.amountPaid || 0) - Number(transaction.amount || 0),
+      0
+    );
+    const now = new Date();
+    // Best-effort status recovery - there's no record of exactly what the
+    // status was before this payment was applied, so this reconstructs a
+    // reasonable one from what's still true: fully unpaid again means
+    // either "sent" or "overdue" depending on the due date, otherwise it's
+    // back to "partially-paid".
+    const status =
+      amountPaid <= 0
+        ? invoice.dueDate && new Date(invoice.dueDate) < now
+          ? "overdue"
+          : "sent"
+        : "partially-paid";
+
+    const updatedInvoice = await invoiceRepository.update(invoice._id, { amountPaid, status });
+    const updatedTransaction = await transactionRepo.update(transaction._id, {
+      status: "CANCELLED",
+      voidedAt: now,
+    });
+    return { invoice: updatedInvoice, transaction: updatedTransaction };
   };
 
   // Partial-payment history for an invoice: every transaction attempt plus

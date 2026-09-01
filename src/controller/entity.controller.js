@@ -88,6 +88,13 @@ class EntityController {
     const result = await EntityService.subscribe({ userId: user.id, planId: plan });
     return successResponse(req, res, result, 'Operation Successful');
   });
+
+  static provisionVirtualAccount = catchAsync(async (req, res, next) => {
+    const user = req.user;
+    const { bankVerificationNumber } = req.body;
+    const result = await EntityService.provisionVirtualAccount({ userId: user.id, bankVerificationNumber });
+    return successResponse(req, res, result, 'Virtual account activated');
+  });
 }
 
 module.exports = {

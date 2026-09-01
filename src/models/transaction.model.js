@@ -46,9 +46,36 @@ const transactionSchema = new Schema({
     enum: ['PENDING', 'SUCCESS', 'FAILED', 'CANCELLED'],
     default: 'PENDING',
   },
+  // MANUAL covers payment collected outside Paystack entirely (a direct
+  // bank transfer, cash, POS in person) - very common for Nigerian SMEs,
+  // since not every customer wants to pay a card/online processing fee.
+  // See InvoiceService.recordManualPayment.
   channel: {
     type: String,
-    enum: ['PAYSTACK', 'FLUTTERWAVE'],
+    enum: ['PAYSTACK', 'FLUTTERWAVE', 'MANUAL'],
+  },
+  // Only meaningful for channel: 'MANUAL' - how the business actually
+  // received the money.
+  method: {
+    type: String,
+    enum: ['bank_transfer', 'cash', 'pos', 'other'],
+    default: null,
+  },
+  // Which Entity recorded this (self-attested, unlike Paystack/Flutterwave
+  // transactions which are verified by the processor) - an accountability
+  // trail for manual entries specifically. Null for processor-verified
+  // transactions.
+  recordedBy: {
+    type: Schema.Types.ObjectId,
+    ref: 'Entity',
+    default: null,
+  },
+  // Set when a manual entry is voided (see InvoiceService.voidManualPayment)
+  // - a correction path for mis-recorded entries, since these aren't backed
+  // by a processor's own record the way a Paystack transaction is.
+  voidedAt: {
+    type: Date,
+    default: null,
   },
   reference: {
     type: String,

@@ -11,7 +11,8 @@
     "seed": "cross-env NODE_ENV=test node src/seed/all.js",
     "only_test": "cross-env NODE_ENV=test jest --forceExit",
     "start": "node start.js",
-    "send-reminders": "node src/jobs/sendPaymentReminders.js"
+    "send-reminders": "node src/jobs/sendPaymentReminders.js",
+    "generate-recurring-invoices": "node src/jobs/generateRecurringInvoices.js"
   },
   "jest": {
     "testEnvironment": "node",

@@ -21,6 +21,14 @@ router.post(
   validateReq(createInventoryItemSchema),
   InventoryController.createInventoryItem
 );
+// Registered before the bare `/:code` route below - "low-stock" would
+// otherwise be swallowed as a `:code` value and hit getInventoryItem
+// instead.
+router.get(
+  `${BASE}/low-stock`,
+  Authorization.authenticateToken,
+  InventoryController.getLowStockItems
+);
 router.get(
   `${BASE}/:code`,
   Authorization.authenticateToken,

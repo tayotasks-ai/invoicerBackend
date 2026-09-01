@@ -8,6 +8,8 @@ const inventoryRoute = require('./inventory.route');
 const quoteRoute = require('./quote.route');
 const accountantRoute = require('./accountant.route');
 const reportingRoute = require('./reporting.route');
+const recurringInvoiceRoute = require('./recurringInvoice.route');
+const expenseRoute = require('./expense.route');
 
 module.exports = {
   authRoute,
@@ -19,5 +21,7 @@ module.exports = {
   inventoryRoute,
   quoteRoute,
   accountantRoute,
-  reportingRoute
+  reportingRoute,
+  recurringInvoiceRoute,
+  expenseRoute
 };

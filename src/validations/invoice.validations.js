@@ -97,8 +97,18 @@ const initiatePaymentSchema = {
     }),
 };
 
+const recordPaymentSchema = {
+    body: Joi.object().required().keys({
+        amount: Joi.number().positive().required(),
+        method: Joi.string().valid('bank_transfer', 'cash', 'pos', 'other').required(),
+        reference: Joi.string().optional().allow(''),
+        note: Joi.string().optional().allow(''),
+    }),
+};
+
 module.exports = {
     createInvoiceSchema,
     updateInvoiceSchema,
-    initiatePaymentSchema
+    initiatePaymentSchema,
+    recordPaymentSchema
 };

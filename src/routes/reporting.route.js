@@ -11,5 +11,9 @@ const BASE = "/reports";
 // pattern as every other authenticated route - the service takes user.id,
 // never a value from the request body/params).
 router.get(`${BASE}/overview`, Authorization.authenticateToken, ReportingController.getOverview);
+// The dashboard's "what needs your attention" feed - see
+// ReportingService.getActionItems.
+router.get(`${BASE}/action-items`, Authorization.authenticateToken, ReportingController.getActionItems);
+router.get(`${BASE}/transactions/export/csv`, Authorization.authenticateToken, ReportingController.exportTransactionsCsv);
 
 module.exports = router;

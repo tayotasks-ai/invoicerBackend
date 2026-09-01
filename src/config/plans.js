@@ -32,6 +32,7 @@ const PLANS = {
     allowQuotes: false,
     allowInventory: false,
     allowAccountantAccess: false,
+    allowRecurringInvoices: false,
   },
   // Low-friction entry tier sitting between Free and Growth's 18x price
   // jump - the goal is converting a free user into *any* paying customer,
@@ -51,6 +52,7 @@ const PLANS = {
     allowQuotes: false,
     allowInventory: false,
     allowAccountantAccess: false,
+    allowRecurringInvoices: false,
   },
   growth: {
     id: 'growth',
@@ -62,6 +64,9 @@ const PLANS = {
     allowQuotes: true,
     allowInventory: false,
     allowAccountantAccess: false,
+    // Same tier as reminders/quotes - a business that can't chase payments
+    // yet doesn't get automated billing either.
+    allowRecurringInvoices: true,
   },
   business: {
     id: 'business',
@@ -73,6 +78,7 @@ const PLANS = {
     allowQuotes: true,
     allowInventory: true,
     allowAccountantAccess: true,
+    allowRecurringInvoices: true,
   },
 };
 

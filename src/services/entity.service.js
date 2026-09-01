@@ -16,6 +16,7 @@ const { generateInvoice } = require("../utils/invoice");
 const { getPlan, listPlans } = require("../config/plans");
 const { sendEmail } = require("../utils/email.util");
 const { buildEmailHtml, infoRow, esc } = require("../utils/templates/emailLayout");
+const SeerbitUtil = require("../utils/seerbit.utils");
 
 class EntityService {
   static addBank = async ({
@@ -262,6 +263,71 @@ ${infoRow("Temporary password", tempPassword)}`,
     }).catch((error) => console.error("Failed to email staff invite:", error.message));
 
     return { entity: createdEntity, tempPassword };
+  };
+
+  // Activates a dedicated Seerbit virtual account for this business (see
+  // src/utils/seerbit.utils.js). `bankVerificationNumber` is a one-shot,
+  // request-only value: it's forwarded to Seerbit inside
+  // SeerbitUtil.createVirtualAccount and is never written to `entity`,
+  // logged, or returned from this method - only the resulting account
+  // details are persisted, on the `virtualAccount` subdocument, which has
+  // no bvn field at all (see entity.model.js).
+  static provisionVirtualAccount = async ({ userId, bankVerificationNumber }) => {
+    const entity = await entityRepository.findById(userId);
+    abortIf(!entity, httpStatus.NOT_FOUND, "Entity not found");
+    abortIf(
+      entity.virtualAccount?.status === "active",
+      httpStatus.BAD_REQUEST,
+      "A virtual account is already active for this business"
+    );
+    abortIf(
+      !SeerbitUtil.isConfigured(),
+      httpStatus.SERVICE_UNAVAILABLE,
+      "Virtual accounts aren't available yet - this business hasn't finished setting up its banking partner."
+    );
+
+    const reference = "va_" + crypto.randomUUID().split("-").join("").slice(0, 20);
+
+    try {
+      const result = await SeerbitUtil.createVirtualAccount({
+        fullName: entity.name,
+        email: entity.email,
+        reference,
+        currency: "NGN",
+        bankVerificationNumber,
+      });
+      const updated = await entityRepository.update(userId, {
+        virtualAccount: {
+          provider: "seerbit",
+          status: "active",
+          accountNumber: result.accountNumber,
+          bankName: result.bankName,
+          accountName: result.accountName,
+          reference: result.reference,
+          error: null,
+          createdAt: new Date(),
+        },
+      });
+      return updated.virtualAccount;
+    } catch (error) {
+      // error.message here is either Seerbit's own rejection reason (e.g.
+      // "Invalid BVN") or a generic transport error - never the raw
+      // request/response, which could echo the BVN back. Safe to log.
+      console.error(`provisionVirtualAccount failed for entity ${userId}:`, error.message);
+      await entityRepository.update(userId, {
+        virtualAccount: {
+          provider: "seerbit",
+          status: "failed",
+          accountNumber: null,
+          bankName: null,
+          accountName: null,
+          reference,
+          error: error.message,
+          createdAt: new Date(),
+        },
+      });
+      abortIf(true, httpStatus.BAD_GATEWAY, `Couldn't activate your virtual account: ${error.message}`);
+    }
   };
 }
 

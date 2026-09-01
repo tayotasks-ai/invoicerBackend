@@ -20,6 +20,17 @@ class InvoiceController {
     return successResponse(req, res, invoices);
   });
 
+  // Same filters as getAllInvoices, but every matching row rather than one
+  // page - a CSV download instead of a JSON envelope, same idea as
+  // downloadInvoiceById.
+  static exportCsv = catchAsync(async (req, res, next) => {
+    const user = req.user;
+    const csv = await InvoiceService.exportInvoicesCsv(user.id, req.query);
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Content-Disposition', 'attachment; filename="invoices.csv"');
+    return res.send(csv);
+  });
+
   static initiatePayment = catchAsync(async (req, res, next) => {
     const { code } = req.params;
     // `amount` is optional - a partial payment (see InvoiceService docstring).
@@ -44,6 +55,23 @@ class InvoiceController {
     const user = req.user;
     const result = await InvoiceService.getInvoiceTransactions(code, user.id);
     return successResponse(req, res, result);
+  });
+
+  // Records a payment collected outside Paystack (bank transfer, cash,
+  // POS) against this invoice.
+  static recordPayment = catchAsync(async (req, res, next) => {
+    const { code } = req.params;
+    const user = req.user;
+    const result = await InvoiceService.recordManualPayment(code, user.id, req.body);
+    return successResponse(req, res, result, "Payment recorded");
+  });
+
+  // Undoes a mis-recorded manual payment.
+  static voidPayment = catchAsync(async (req, res, next) => {
+    const { code, transactionId } = req.params;
+    const user = req.user;
+    const result = await InvoiceService.voidManualPayment(code, transactionId, user.id);
+    return successResponse(req, res, result, "Payment voided");
   });
 
   // Get a single invoice by ID

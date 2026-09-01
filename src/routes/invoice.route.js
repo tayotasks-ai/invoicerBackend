@@ -5,6 +5,7 @@ const {
   createInvoiceSchema,
   updateInvoiceSchema,
   initiatePaymentSchema,
+  recordPaymentSchema,
 } = require("../validations/invoice.validations");
 const Authorization = require("../utils/authorization.service");
 const router = express.Router();
@@ -22,6 +23,11 @@ router.get(
   `${BASE}`,
   Authorization.authenticateToken,
   InvoiceController.getAllInvoices
+);
+router.get(
+  `${BASE}/export/csv`,
+  Authorization.authenticateToken,
+  InvoiceController.exportCsv
 );
 router.post(
   `${BASE}/:code/initiate-payment`,
@@ -53,6 +59,17 @@ router.post(
   `${BASE}/:code/send-reminder`,
   Authorization.authenticateToken,
   InvoiceController.sendReminder
+);
+router.post(
+  `${BASE}/:code/record-payment`,
+  Authorization.authenticateToken,
+  validateReq(recordPaymentSchema),
+  InvoiceController.recordPayment
+);
+router.post(
+  `${BASE}/:code/void-payment/:transactionId`,
+  Authorization.authenticateToken,
+  InvoiceController.voidPayment
 );
 router.put(
   `${BASE}/:code`,

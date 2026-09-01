@@ -2,6 +2,11 @@ const mongoose = require("mongoose");
 const invoiceRepository = require("../repo/invoice.repo");
 const transactionRepo = require("../repo/transaction.repo");
 const customerRepository = require("../repo/customer.repo");
+const recurringInvoiceRepo = require("../repo/recurringInvoice.repo");
+const expenseRepository = require("../repo/expense.repo");
+const { toCsv } = require("../utils/csv.util");
+const { money } = require("../utils/templates/money");
+const { InventoryService } = require("./inventory.service");
 
 // How many months of history the trend chart covers, including the current
 // (in-progress) month.
@@ -10,6 +15,11 @@ const TREND_MONTHS = 12;
 // and "aging" are both computed over exactly this set. Deliberately excludes
 // 'draft' (never sent, so nothing is actually owed yet) and 'paid'.
 const UNPAID_STATUSES = ["sent", "partially-paid", "overdue"];
+// How many days before its due date an unpaid invoice shows up as
+// "due soon" in the action-items feed (see getActionItems).
+const ACTION_LOOKAHEAD_DAYS = 3;
+// Higher severity sorts first in the action-items feed.
+const SEVERITY_ORDER = { high: 0, medium: 1, low: 2 };
 
 function monthKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -235,6 +245,163 @@ class ReportingService {
       topCustomers,
       aging,
     };
+  };
+
+  // A Todoist-style "what needs your attention today" feed for the
+  // dashboard - not a manual to-do list a business types into, but one
+  // auto-derived entirely from signals this app already tracks: invoices
+  // going overdue or coming due, stock running low, and recurring-invoice
+  // drafts sitting unreviewed. Each item type clears itself the moment its
+  // underlying condition resolves (an invoice gets paid, stock gets
+  // restocked, a draft gets sent) - there's nothing to check off by hand.
+  static getActionItems = async (entity_id) => {
+    const now = new Date();
+    const soonCutoff = new Date(now.getTime() + ACTION_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000);
+
+    const [unpaidInvoices, lowStockItems, recurringWithDrafts, awaitingPaymentExpenses] = await Promise.all([
+      invoiceRepository.findAll({
+        query: { entity: entity_id, status: { $in: UNPAID_STATUSES }, dueDate: { $ne: null } },
+        select: "invoiceNumber total amountPaid currency dueDate",
+        populate: [{ path: "customer", select: "name" }],
+        sort: { dueDate: 1 },
+      }),
+      InventoryService.getLowStockItems(entity_id),
+      // Every schedule that has generated at least once - filtered down to
+      // "still sitting as a draft" in JS below, since a schedule whose last
+      // draft has already been sent shouldn't keep showing up here forever.
+      recurringInvoiceRepo.findAll({
+        query: { entity: entity_id, lastGeneratedInvoice: { $ne: null } },
+        populate: [
+          { path: "customer", select: "name" },
+          { path: "lastGeneratedInvoice", select: "invoiceNumber status total currency" },
+        ],
+      }),
+      // Expenses (money the business owes) where the vendor has already
+      // submitted amount + bank details and is waiting to be paid - the AP
+      // mirror of an unpaid invoice.
+      expenseRepository.findAll({ query: { entity: entity_id, status: "submitted" }, sort: { submittedAt: 1 } }),
+    ]);
+
+    const items = [];
+
+    for (const invoice of unpaidInvoices) {
+      const balance = Math.max(Number(invoice.total || 0) - Number(invoice.amountPaid || 0), 0);
+      if (balance <= 0) continue;
+      const due = new Date(invoice.dueDate);
+      const daysPastDue = daysBetween(now, due);
+      const customerName = invoice.customer?.name || "This customer";
+      if (daysPastDue > 0) {
+        items.push({
+          id: `overdue-${invoice._id}`,
+          type: "overdue_invoice",
+          severity: "high",
+          title: `Invoice ${invoice.invoiceNumber} is ${daysPastDue} day${daysPastDue === 1 ? "" : "s"} overdue`,
+          detail: `${customerName} owes ${money(balance, invoice.currency)} - consider sending a reminder.`,
+          link: { name: "invoice-detail", params: { code: invoice.invoiceNumber } },
+          date: due,
+        });
+      } else if (due <= soonCutoff) {
+        const daysUntilDue = -daysPastDue;
+        items.push({
+          id: `due-soon-${invoice._id}`,
+          type: "due_soon_invoice",
+          severity: "medium",
+          title: `Invoice ${invoice.invoiceNumber} is due ${daysUntilDue === 0 ? "today" : `in ${daysUntilDue} day${daysUntilDue === 1 ? "" : "s"}`}`,
+          detail: `${customerName} owes ${money(balance, invoice.currency)}.`,
+          link: { name: "invoice-detail", params: { code: invoice.invoiceNumber } },
+          date: due,
+        });
+      }
+    }
+
+    for (const item of lowStockItems) {
+      items.push({
+        id: `low-stock-${item._id}`,
+        type: "low_stock",
+        severity: "medium",
+        title: `${item.name} is running low on stock`,
+        detail: `${item.quantityInStock} ${item.unit || "unit"}${item.quantityInStock === 1 ? "" : "s"} left (threshold: ${item.lowStockThreshold}).`,
+        link: { name: "inventory" },
+        date: now,
+      });
+    }
+
+    for (const schedule of recurringWithDrafts) {
+      // Once the business sends the generated draft, its status moves off
+      // 'draft' - this item disappears from the feed on its own, no
+      // dismiss/complete action needed.
+      if (schedule.lastGeneratedInvoice?.status !== "draft") continue;
+      items.push({
+        id: `recurring-draft-${schedule._id}`,
+        type: "recurring_draft",
+        severity: "medium",
+        title: `A recurring draft for ${schedule.customer?.name || "a customer"} is ready to review`,
+        detail: `Invoice ${schedule.lastGeneratedInvoice.invoiceNumber} (${money(schedule.lastGeneratedInvoice.total, schedule.lastGeneratedInvoice.currency)}) was generated automatically and is waiting to be sent.`,
+        link: { name: "invoice-detail", params: { code: schedule.lastGeneratedInvoice.invoiceNumber } },
+        date: schedule.lastGeneratedAt || now,
+      });
+    }
+
+    for (const expense of awaitingPaymentExpenses) {
+      items.push({
+        id: `expense-${expense._id}`,
+        type: "expense_awaiting_payment",
+        severity: "medium",
+        title: `${expense.payeeName || expense.vendorName || "A vendor"} is waiting to be paid`,
+        detail: `${money(expense.amount, expense.currency)}${expense.description ? ` for ${expense.description}` : ""} - bank details are on file, ready to pay.`,
+        link: { name: "expense-detail", params: { code: expense.code } },
+        date: expense.submittedAt || now,
+      });
+    }
+
+    items.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] || new Date(a.date) - new Date(b.date));
+
+    // Capped so a business with a large backlog gets a focused list rather
+    // than a wall of items - totalCount lets the frontend say "+12 more".
+    return { items: items.slice(0, 15), totalCount: items.length };
+  };
+
+  // Every matching transaction as a CSV string - the closest thing to a
+  // bank statement this app can hand a business (or their accountant).
+  // Capped at 5000 rows, same reasoning as InvoiceService.exportInvoicesCsv.
+  static exportTransactionsCsv = async (entity_id, filters = {}) => {
+    const { status, startDate, endDate } = filters;
+    const match = { entity: new mongoose.Types.ObjectId(entity_id) };
+    if (status) match.status = { $in: status.split(",") };
+    if (startDate || endDate) {
+      match.createdAt = {};
+      if (startDate) match.createdAt.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        match.createdAt.$lte = end;
+      }
+    }
+
+    const transactions = await transactionRepo.aggregate([
+      { $match: match },
+      { $sort: { createdAt: -1 } },
+      { $limit: 5000 },
+      { $lookup: { from: "customers", localField: "customer", foreignField: "_id", as: "customer" } },
+      { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
+      // `invoice` is optional on a Transaction (see transaction.model.js -
+      // a subscription payment has no invoice), so this lookup must
+      // preserve rows with no match too, not just drop them.
+      { $lookup: { from: "invoices", localField: "invoice", foreignField: "_id", as: "invoice" } },
+      { $unwind: { path: "$invoice", preserveNullAndEmptyArrays: true } },
+    ]);
+
+    return toCsv(transactions, [
+      { header: "Date", value: (t) => (t.createdAt ? new Date(t.createdAt).toISOString() : "") },
+      { header: "Amount", key: "amount" },
+      { header: "Currency", key: "currency" },
+      { header: "Channel", key: "channel" },
+      { header: "Method", value: (t) => t.method || "" },
+      { header: "Status", key: "status" },
+      { header: "Customer", value: (t) => t.customer?.name || "" },
+      { header: "Invoice", value: (t) => t.invoice?.invoiceNumber || "" },
+      { header: "Reference", key: "reference" },
+    ]);
   };
 }
 

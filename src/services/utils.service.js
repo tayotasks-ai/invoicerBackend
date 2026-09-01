@@ -7,13 +7,11 @@ const {
   PaymentResponse,
 } = require("../utils/paystack.utils");
 const transactionRepo = require("../repo/transaction.repo");
-const invoiceRepo = require("../repo/invoice.repo");
-const customerRepo = require("../repo/customer.repo");
 const entityRepo = require("../repo/entity.repo");
-const { sendEmail } = require("../utils/email.util");
 const crypto = require("crypto");
-const { buildEmailHtml, esc, infoRow } = require("../utils/templates/emailLayout");
-const { money } = require("../utils/templates/money");
+// Required directly (not via '../services') - that barrel also requires
+// UtilsService, so going through it here would be circular.
+const { InvoiceService } = require("./invoice.service");
 
 class UtilsService {
   static listAllBanks = async () => {
@@ -87,46 +85,13 @@ class UtilsService {
             status: "SUCCESS",
           });
 
-          const _in = await invoiceRepo.findById(transaction.invoice);
-          if (!_in) return {};
-
-          // Cumulative across every successful transaction, so an invoice
-          // paid in several partial installments ends up "paid" only once
-          // the running total actually covers it - not on any single
-          // transaction alone.
-          const amountPaid =
-            Number(_in.amountPaid || 0) + Number(transaction.amount || 0);
-          const total = Number(_in.total || 0);
-          const status = amountPaid >= total ? "paid" : "partially-paid";
-          const invoice = await invoiceRepo.update(transaction.invoice, {
-            amountPaid,
-            status,
-          });
-
-          // Best-effort payment receipt - never let a mail failure affect
-          // webhook processing, which Paystack already got a 200 for.
-          try {
-            const customer = await customerRepo.findById(transaction.customer);
-            if (customer?.email) {
-              const balanceDue = Math.max(total - amountPaid, 0);
-              await sendEmail({
-                to: customer.email,
-                subject: `Payment received for invoice ${_in.invoiceNumber}`,
-                html: buildEmailHtml({
-                  preheader: `We've received your payment for invoice ${_in.invoiceNumber}.`,
-                  heading: "Payment received",
-                  bodyHtml: `<p style="margin:0 0 10px;">Hi ${esc(customer.name || "there")}, we've received your payment for invoice <strong>${esc(_in.invoiceNumber)}</strong>.</p>
-${infoRow("Amount paid", money(transaction.amount, transaction.currency))}
-${status === "paid"
-  ? infoRow("Status", "Fully paid")
-  : infoRow("Balance remaining", money(balanceDue, _in.currency))}`,
-                  footnote: "Thank you!",
-                }),
-              });
-            }
-          } catch (emailError) {
-            console.error("Failed to send payment receipt:", emailError.message);
-          }
+          // Cumulative amountPaid, status flip, and the "payment received"
+          // receipt email all live in one place now (InvoiceService.
+          // applyPayment) - shared with InvoiceService.recordManualPayment
+          // so a Paystack payment and a manually-recorded one behave
+          // identically once confirmed.
+          const invoice = await InvoiceService.applyPayment(transaction.invoice, transaction.amount);
+          if (!invoice) return {};
 
           return {};
         } catch (error) {

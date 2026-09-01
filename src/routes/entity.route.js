@@ -7,6 +7,7 @@ const {
   editEntitySchema,
   addMemberSchema,
   subscribeSchema,
+  provisionVirtualAccountSchema,
 } = require("../validations/entity.validations");
 const router = express.Router();
 
@@ -70,6 +71,17 @@ router.post(
   validateReq(subscribeSchema),
   Authorization.authenticateToken,
   EntityController.subscribe
+);
+
+// Virtual account (Expenses/Accounts Payable) - provisioning only, see
+// EntityService.provisionVirtualAccount. Status is read back via the
+// existing GET /entity/me (the `virtualAccount` field on the entity), so
+// there's no separate GET route here.
+router.post(
+  `${BASE}/virtual-account`,
+  validateReq(provisionVirtualAccountSchema),
+  Authorization.authenticateToken,
+  EntityController.provisionVirtualAccount
 );
 
 module.exports = router;

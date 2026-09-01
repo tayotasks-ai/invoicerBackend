@@ -13,6 +13,11 @@ class InventoryController {
     return successResponse(req, res, item, "Inventory item created");
   });
 
+  static getLowStockItems = catchAsync(async (req, res) => {
+    const items = await InventoryService.getLowStockItems(req.user.id);
+    return successResponse(req, res, items, "Operation Successful");
+  });
+
   static getInventoryItem = catchAsync(async (req, res) => {
     const item = await InventoryService.getInventoryItem(req.params.code, req.user.id);
     return successResponse(req, res, item, "Operation Successful");

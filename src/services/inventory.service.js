@@ -28,6 +28,26 @@ class InventoryService {
     return inventoryRepo.create({ ...data, entity: entity_id });
   };
 
+  // Items at or under their own lowStockThreshold - the same "low" badge
+  // already shown per-item on the Inventory page (see isLowStock in
+  // Inventory.vue), surfaced here so the dashboard can flag it without
+  // someone having to go looking. lowStockThreshold: 0 (the default) means
+  // "no threshold set" and is deliberately excluded, not treated as "always
+  // low" - $expr is needed since this compares two fields on the same
+  // document (quantityInStock vs lowStockThreshold), which a plain query
+  // match can't express.
+  static getLowStockItems = async (entity_id) => {
+    return inventoryRepo.findAll({
+      query: {
+        entity: entity_id,
+        isActive: true,
+        lowStockThreshold: { $gt: 0 },
+        $expr: { $lte: ["$quantityInStock", "$lowStockThreshold"] },
+      },
+      sort: { quantityInStock: 1 },
+    });
+  };
+
   static getInventoryItem = async (code, entity_id) => {
     const item = await inventoryRepo.findOne({ query: { code, entity: entity_id } });
     abortIf(!item, httpStatus.NOT_FOUND, "Inventory item not found");

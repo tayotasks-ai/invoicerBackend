@@ -102,6 +102,32 @@ var entitySchema = new Schema({
   emailVerificationToken: {
     type: String,
     default: null
+  },
+  // Dedicated bank account for the Expenses/Accounts Payable feature,
+  // provisioned via Seerbit - see EntityService.provisionVirtualAccount and
+  // src/utils/seerbit.utils.js. Provisioning only for now; paying vendors
+  // automatically from this account isn't built yet.
+  //
+  // Deliberately has NO bvn field. The BVN a business enters to activate
+  // this is forwarded straight to Seerbit in that one request and never
+  // persisted here - see provisionVirtualAccount for why.
+  virtualAccount: {
+    provider: {
+      type: String,
+      enum: ['seerbit'],
+      default: null
+    },
+    status: {
+      type: String,
+      enum: ['active', 'failed'],
+      default: null
+    },
+    accountNumber: { type: String, default: null },
+    bankName: { type: String, default: null },
+    accountName: { type: String, default: null },
+    reference: { type: String, default: null },
+    error: { type: String, default: null },
+    createdAt: { type: Date, default: null }
   }
 }, {
   timestamps: true,

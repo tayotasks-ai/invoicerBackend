@@ -35,9 +35,20 @@ const addMemberSchema = {
     })
 }
 
+// BVN is always exactly 11 digits in Nigeria. Never logged/persisted past
+// this one request - see EntityService.provisionVirtualAccount.
+const provisionVirtualAccountSchema = {
+    body: Joi.object().required().keys({
+        bankVerificationNumber: Joi.string().pattern(/^\d{11}$/).required().messages({
+            'string.pattern.base': 'BVN must be exactly 11 digits',
+        }),
+    }),
+}
+
 module.exports = {
     addBankSchema,
     editEntitySchema,
     addMemberSchema,
-    subscribeSchema
+    subscribeSchema,
+    provisionVirtualAccountSchema
 }

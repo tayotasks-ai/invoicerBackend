@@ -99,3 +99,26 @@ TERMII_API_KEY=
 TERMII_DEVICE_ID=
 TERMII_WHATSAPP_TEMPLATE_ID=
 TERMII_BASE_URL=https://api.ng.termii.com
+
+# --- Seerbit virtual accounts (Expenses / Accounts Payable feature) ---
+# A business can activate a dedicated virtual bank account via Seerbit
+# (Settings -> Business profile) - see src/utils/seerbit.utils.js and
+# EntityService.provisionVirtualAccount. This is account provisioning ONLY:
+# automatically paying vendors out of this account isn't built yet.
+# Seerbit's payout ("Pocket") product is a separate integration with a
+# human-facing OTP step and its own compliance approval beyond normal
+# merchant KYC, so it's deliberately been left out for now - businesses pay
+# vendors themselves and mark expenses as paid from the Expenses page.
+#   1. Sign up at seerbit.com and complete Seerbit's merchant
+#      verification/KYC.
+#   2. Your dashboard starts in Test Mode with test keys, which only ever
+#      touch test/sandbox data - safe to use here.
+#   3. In Settings -> API Keys, grab your Public Key and Private (Secret)
+#      Key - those are SEERBIT_PUBLIC_KEY / SEERBIT_SECRET_KEY below.
+# Until both are set, activating a virtual account fails with a clear
+# "not available yet" error rather than a silent no-op, since (unlike
+# reminders) this is a deliberate action a business owner clicks a button
+# for.
+SEERBIT_PUBLIC_KEY=
+SEERBIT_SECRET_KEY=
+SEERBIT_BASE_URL=https://seerbitapi.com
