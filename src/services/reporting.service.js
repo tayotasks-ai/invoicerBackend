@@ -4,6 +4,7 @@ const transactionRepo = require("../repo/transaction.repo");
 const customerRepository = require("../repo/customer.repo");
 const recurringInvoiceRepo = require("../repo/recurringInvoice.repo");
 const expenseRepository = require("../repo/expense.repo");
+const spendRepository = require("../repo/spend.repo");
 const { toCsv } = require("../utils/csv.util");
 const { money } = require("../utils/templates/money");
 const { InventoryService } = require("./inventory.service");
@@ -82,12 +83,21 @@ class ReportingService {
   //   - revenueTrend: last 12 months, collected (money actually received)
   //     vs invoiced (money billed), one point per month.
   //   - cashFlowTrend: last 12 months, inflow (same "collected" figure as
-  //     revenueTrend) vs outflow (expenses actually paid) vs net, one point
-  //     per month - the money-in-vs-money-out view revenueTrend alone can't
-  //     answer, since it never looks at expenses at all.
-  //   - cashFlow: this month vs last month collected/invoiced/expenses paid
-  //     (with % change), net cash flow, plus right-now snapshots of
-  //     outstanding and overdue.
+  //     revenueTrend) vs outflow vs net, one point per month - the
+  //     money-in-vs-money-out view revenueTrend alone can't answer, since it
+  //     never looks at expenses/spend at all. Outflow here is two sources
+  //     combined: paid Expenses (accounts-payable, money owed to a vendor)
+  //     and Spend (self-logged spending - see spend.model.js) - both are
+  //     real money that left the business, so neither alone is the whole
+  //     picture.
+  //   - cashFlow: this month vs last month collected/invoiced/outflow (with
+  //     % change), net cash flow, plus right-now snapshots of outstanding
+  //     and overdue.
+  //   - categoryBreakdown: this month's outflow broken down by Spend
+  //     category, with paid Expenses folded in as one "Vendor payments"
+  //     bucket (Expenses have no category of their own) - so the breakdown
+  //     always sums to the same total as cashFlow.outflow.current,
+  //     never silently undercounting.
   //   - topCustomers: the 5 customers who've paid the most, all-time.
   //   - aging: unpaid invoices bucketed by how overdue they are.
   //
@@ -108,6 +118,8 @@ class ReportingService {
       collectedByMonthRaw,
       invoicedByMonthRaw,
       expensesPaidByMonthRaw,
+      spendByMonthRaw,
+      spendByCategoryThisMonthRaw,
       unpaidInvoices,
       topCustomersRaw,
       currencyInvoice,
@@ -166,6 +178,42 @@ class ReportingService {
           },
         },
       ]),
+      // Self-logged spending (see spend.model.js), grouped by the month it
+      // was incurred in - the other half of outflow, alongside paid
+      // Expenses above. Keyed off `date` (when the cost happened), same
+      // reasoning as `paidAt` above.
+      spendRepository.aggregate([
+        {
+          $match: {
+            entity: entityObjectId,
+            date: { $gte: startOfTrendWindow },
+          },
+        },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m", date: "$date" } },
+            total: { $sum: "$amount" },
+          },
+        },
+      ]),
+      // This month's spend, broken down by category - backs
+      // categoryBreakdown below. A separate, narrower query rather than
+      // filtering spendByMonthRaw in JS, since that one only has monthly
+      // totals, not a per-category split.
+      spendRepository.aggregate([
+        {
+          $match: {
+            entity: entityObjectId,
+            date: { $gte: startOfThisMonth },
+          },
+        },
+        {
+          $group: {
+            _id: "$category",
+            total: { $sum: "$amount" },
+          },
+        },
+      ]),
       // Every currently-unpaid invoice, once - this backs outstanding,
       // overdue, and the aging breakdown, all three of which are just
       // different ways of slicing this same set.
@@ -215,15 +263,17 @@ class ReportingService {
 
     // --- Cash flow trend: same 12 fixed, zero-filled months as revenueTrend
     // - inflow reuses collectedByMonth (already computed above, no second
-    // query for the same figure), outflow is the expenses-paid map just
-    // fetched, net is simply their difference per month.
+    // query for the same figure), outflow is paid Expenses + Spend added
+    // together (two different sources of the same thing: money that left
+    // the business), net is simply their difference per month.
     const expensesPaidByMonth = new Map(expensesPaidByMonthRaw.map((r) => [r._id, r.total]));
+    const spendByMonth = new Map(spendByMonthRaw.map((r) => [r._id, r.total]));
     const cashFlowTrend = [];
     for (let i = TREND_MONTHS - 1; i >= 0; i--) {
       const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const key = monthKey(monthDate);
       const inflow = collectedByMonth.get(key) || 0;
-      const outflow = expensesPaidByMonth.get(key) || 0;
+      const outflow = (expensesPaidByMonth.get(key) || 0) + (spendByMonth.get(key) || 0);
       cashFlowTrend.push({ month: key, label: monthLabel(monthDate), inflow, outflow, net: inflow - outflow });
     }
 
@@ -266,20 +316,36 @@ class ReportingService {
       },
       outstanding: { total: outstandingTotal, count: unpaidInvoices.length },
       overdue: { total: overdueTotal, count: overdueCount },
-      expensesPaid: {
+      // Combined outflow: paid Expenses (accounts-payable) + Spend
+      // (self-logged spending) - see the cashFlowTrend comment above for
+      // why these two sources are added together rather than reported
+      // separately.
+      outflow: {
         current: thisMonthOutflow,
         previous: lastMonthOutflow,
         changePct: pctChange(thisMonthOutflow, lastMonthOutflow),
       },
       // Net cash flow = money collected minus money paid out, this month.
       // The one figure that actually answers "is the business healthy right
-      // now" - collected and expensesPaid alone each only tell half of it.
+      // now" - collected and outflow alone each only tell half of it.
       net: {
         current: thisMonthNet,
         previous: lastMonthNet,
         changePct: netChangePct(thisMonthNet, lastMonthNet),
       },
     };
+
+    // --- Category breakdown: this month's Spend grouped by category, plus
+    // paid Expenses folded in as one "vendor_payments" bucket so the whole
+    // breakdown sums to thisMonthOutflow exactly - a business that only
+    // ever pays vendors through the Expenses flow and never logs a Spend
+    // record should still see where their money went, not an empty chart.
+    const categoryBreakdown = spendByCategoryThisMonthRaw.map((r) => ({ category: r._id, total: r.total }));
+    const vendorPaymentsThisMonth = expensesPaidByMonth.get(monthKey(startOfThisMonth)) || 0;
+    if (vendorPaymentsThisMonth > 0) {
+      categoryBreakdown.push({ category: "vendor_payments", total: vendorPaymentsThisMonth });
+    }
+    categoryBreakdown.sort((a, b) => b.total - a.total);
 
     const aging = ["current", "1-30", "31-60", "61-90", "90+"].map((bucket) => ({
       bucket,
@@ -315,6 +381,7 @@ class ReportingService {
       revenueTrend,
       cashFlowTrend,
       cashFlow,
+      categoryBreakdown,
       topCustomers,
       aging,
     };
