@@ -58,4 +58,16 @@ router.patch(
   AdminController.changePlan
 );
 
+// One-time (but safe to re-run) migration: pushes percentage_charge: 0 to
+// every bank account's Paystack subaccount, for subaccounts created before
+// invoecr moved to a 0% platform fee (see AdminService.syncSubaccountFees).
+// Deliberately not scoped to a single merchant like the routes above - this
+// acts on every subaccount at once.
+router.post(
+  `${BASE}/subaccounts/sync-fees`,
+  Authorization.authenticateToken,
+  Authorization.requireRoot,
+  AdminController.syncSubaccountFees
+);
+
 module.exports = router;

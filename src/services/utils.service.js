@@ -81,9 +81,25 @@ class UtilsService {
             query: { reference: data.reference },
           });
           if (!transaction) return {};
-          await transactionRepo.update(transaction._id, {
-            status: "SUCCESS",
-          });
+
+          // Paystack retries a webhook that didn't get a prompt 200 (and,
+          // now that this Paystack account's webhook is shared with another
+          // product forwarding events on to us, a delivery could plausibly
+          // be duplicated in transit too) - so this same charge.success can
+          // arrive more than once for the same transaction. Flipping status
+          // to SUCCESS and calling applyPayment unconditionally would
+          // double-credit the invoice on a second delivery. Guard against it
+          // with an atomic conditional update: only claim this transaction
+          // (and thus proceed to applyPayment) if it wasn't ALREADY
+          // SUCCESS - checking the status first and writing second would
+          // leave the same race open between two near-simultaneous
+          // deliveries, since both could read "not yet SUCCESS" before
+          // either writes.
+          const claimed = await transactionRepo.findOneAndUpdate(
+            { _id: transaction._id, status: { $ne: "SUCCESS" } },
+            { status: "SUCCESS" }
+          );
+          if (!claimed) return {}; // Already processed - not an error, just a duplicate delivery.
 
           // Cumulative amountPaid, status flip, and the "payment received"
           // receipt email all live in one place now (InvoiceService.

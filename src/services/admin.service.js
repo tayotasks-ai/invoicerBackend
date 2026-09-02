@@ -4,7 +4,9 @@ const entityRepository = require("../repo/entity.repo");
 const invoiceRepository = require("../repo/invoice.repo");
 const expenseRepository = require("../repo/expense.repo");
 const customerRepository = require("../repo/customer.repo");
+const bankAccountRepository = require("../repo/bankAccount.repo");
 const { getPlan, listPlans } = require("../config/plans");
+const { PaystackPaymentGateway } = require("../utils/paystack.utils");
 
 // The root panel's backend. There is no separate root login here - access
 // is gated entirely by Authorization.requireRoot (an email allowlist
@@ -84,6 +86,36 @@ class AdminService {
     abortIf(!validIds.includes(planId), httpStatus.BAD_REQUEST, `Unknown plan "${planId}"`);
     const entity = await AdminService._findByCode(code);
     return entityRepository.update(entity._id, { plan: planId });
+  };
+
+  // One-time migration for the platform-fee change: invoecr moved from
+  // taking a small percentage_charge on every subaccount to taking 0% (see
+  // entity.service.js's addBank). That only affects subaccounts created
+  // going forward - Paystack doesn't retroactively apply a code change to
+  // subaccounts it already created, so every bank account added before this
+  // change is still sitting on its old percentage_charge on Paystack's side
+  // until updated directly. Safe to run more than once - updating an
+  // already-0% subaccount to 0% again is a no-op.
+  static syncSubaccountFees = async () => {
+    const paystack = new PaystackPaymentGateway();
+    const accounts = await bankAccountRepository.findAll({ query: {} });
+    const results = await Promise.all(
+      accounts.map(async (acc) => {
+        const res = await paystack.updateSubaccount(acc.subAccountCode, { percentage_charge: 0 });
+        return {
+          bankAccountCode: acc.code,
+          accountName: acc.accountName,
+          subAccountCode: acc.subAccountCode,
+          success: res.success,
+          message: res.message,
+        };
+      })
+    );
+    return {
+      total: results.length,
+      updated: results.filter((r) => r.success).length,
+      failed: results.filter((r) => !r.success),
+    };
   };
 }
 

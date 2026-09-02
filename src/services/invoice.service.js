@@ -7,7 +7,7 @@ const entityRepository = require("../repo/entity.repo");
 const getPagination = require("../utils/pagination");
 const { default: mongoose } = require("mongoose");
 const { generateInvoice } = require("../utils/invoice");
-const { PaystackPaymentGateway } = require("../utils/paystack.utils");
+const { PaystackPaymentGateway, generatePaystackReference } = require("../utils/paystack.utils");
 const transactionRepo = require("../repo/transaction.repo");
 const bankRepo = require("../repo/bankAccount.repo");
 const { sendEmail } = require("../utils/email.util");
@@ -569,7 +569,11 @@ class InvoiceService {
       "Amount cannot be greater than the remaining balance due"
     );
     const payAmount = amount != null ? amount : balanceDue;
-    let reference = crypto.randomUUID().split("-").join("").slice(0, 17);
+    // See paystack.utils.js's generatePaystackReference for why this can't
+    // just be a bare random string - this Paystack account's webhook is
+    // shared with another product, and the reference prefix is how events
+    // get routed back to invoecr.
+    let reference = generatePaystackReference("invoice");
     const getSubAccount = await bankRepo.findOne({
       query: {
         entity: invoice.entity,

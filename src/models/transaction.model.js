@@ -77,9 +77,20 @@ const transactionSchema = new Schema({
     type: Date,
     default: null,
   },
+  // Not globally unique at the schema level: a MANUAL entry's reference is
+  // free text the merchant types in (their bank transfer reference, say),
+  // and two different merchants entering the same bank reference is
+  // perfectly normal - it shouldn't 500. Paystack/Flutterwave references are
+  // different: those are processor-verified and, since this Paystack
+  // account's webhook is shared with another product (see
+  // paystack.utils.js), true uniqueness there is what makes the shared
+  // webhook safe to route by reference. See the partial unique index below,
+  // which enforces uniqueness for exactly those channels.
+  // Indexed below via the partial unique index, not with `index: true` here
+  // - Mongoose warns ("duplicate schema index") if both declare an index on
+  // the same field.
   reference: {
     type: String,
-    index: true,
   },
   description: {
     type: String,
@@ -102,5 +113,18 @@ const transactionSchema = new Schema({
     type: Date,
   },
 }, { timestamps: true });
+
+// Partial unique index: only applies to processor-verified channels
+// (currently just Paystack), so a duplicate reference there is a real bug -
+// e.g. a collision or a code path accidentally reusing one - not something
+// that should ever happen. MANUAL entries (free-text, merchant-typed
+// references) are excluded on purpose - see the field comment above.
+transactionSchema.index(
+  { reference: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { channel: { $in: ['PAYSTACK', 'FLUTTERWAVE'] } },
+  }
+);
 
 module.exports = mongoose.model('Transaction', transactionSchema);

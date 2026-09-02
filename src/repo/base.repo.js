@@ -127,6 +127,28 @@ class BaseRepository {
     }
   }
 
+  // Unlike update(id, data) above, this filters on more than just _id - the
+  // point is to make a conditional state transition atomic (read-check-write
+  // as a single database operation), not just to query by an arbitrary
+  // field. The canonical use is a one-way status flip that must only ever
+  // happen once even under concurrent/duplicate callers - e.g. "mark this
+  // paid, but only if it isn't already" (see UtilsService.webhook) - where
+  // checking the current status first and writing second would leave a race
+  // between the two requests. Returns null (not an error) when the filter
+  // doesn't match anything, which callers should treat as "someone else
+  // already made this transition," not as a failure.
+  async findOneAndUpdate(query, updateData, options = {}) {
+    try {
+      return await this.model.findOneAndUpdate(query, updateData, {
+        new: true,
+        runValidators: true,
+        ...options,
+      });
+    } catch (error) {
+      throw new Error(`FindOneAndUpdate Error: ${error.message}`);
+    }
+  }
+
   async delete(id) {
     try {
       return await this.model.findByIdAndDelete(id);

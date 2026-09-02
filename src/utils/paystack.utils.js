@@ -1,6 +1,38 @@
 const Paystack = require('paystack');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 require('dotenv').config();
+
+// This Paystack account/secret key is shared with another product (an HR
+// platform) that has its own webhook consumer. Paystack only lets one
+// webhook URL be configured per account, so every event - regardless of
+// which product's transaction it belongs to - lands on that other
+// platform's endpoint first; it inspects the reference and forwards
+// invoecr's events on to this app's own /webhook route (see
+// webhook.route.js / UtilsService.webhook).
+//
+// For that routing to work, every reference invoecr generates must be
+// unmistakably ours - hence the REFERENCE_PREFIX below - and must not
+// collide with a reference either app could generate. Every call site that
+// starts a Paystack transaction (invoice payments, subscription upgrades)
+// MUST go through generatePaystackReference() rather than rolling its own
+// reference, so this stays the single place that guarantees both
+// properties. The purpose segment (e.g. "invoice", "subscription") is just
+// for readability when debugging in the Paystack dashboard - the routing
+// itself only needs to key off REFERENCE_PREFIX.
+//
+// Do not change REFERENCE_PREFIX without coordinating with whoever owns the
+// forwarding logic on the other platform - it's the contract between the
+// two apps.
+const REFERENCE_PREFIX = 'ivcr';
+
+function generatePaystackReference(purpose) {
+  // 32 hex characters (a full v4 UUID with the dashes stripped) - the same
+  // entropy Node's crypto.randomUUID gives, so a collision is not a
+  // realistic concern even shared across two products on one account.
+  const random = crypto.randomUUID().replace(/-/g, '');
+  return `${REFERENCE_PREFIX}_${purpose}_${random}`;
+}
 
 /**
  * Abstract base class for payment gateways
@@ -85,9 +117,16 @@ class PaystackPaymentGateway extends PaymentGateway {
         metadata
       };
 
-      // Add subaccount if provided
+      // Add subaccount if provided. bearer: 'subaccount' means Paystack's own
+      // processing fee is deducted from the business's share, not invoecr's
+      // main account - consistent with invoecr taking a 0% platform cut (see
+      // percentage_charge: 0 in entity.service.js's addBank). Without this,
+      // Paystack's default (`bearer: 'account'`) would charge that fee to
+      // invoecr's main balance on every transaction with nothing in the
+      // split to offset it.
       if (subaccount) {
         transactionData.subaccount = subaccount;
+        transactionData.bearer = 'subaccount';
       }
 
       const response = await this.paystack.transaction.initialize(transactionData);
@@ -200,6 +239,43 @@ class PaystackPaymentGateway extends PaymentGateway {
       });
     }
   }
+
+  /**
+   * Updates an existing subaccount - used to migrate subaccounts created
+   * before the platform-fee change (see entity.service.js's addBank) onto
+   * their new percentage_charge, since that change only affects subaccounts
+   * created going forward. See AdminService.syncSubaccountFees.
+   * @param {string} subaccount_code - The subaccount's code (e.g. ACCT_xxx)
+   * @param {Object} params - Fields to update
+   * @param {number} [params.percentage_charge] - New percentage charged to the main account
+   * @returns {Promise<PaymentResponse>}
+   */
+  async updateSubaccount(subaccount_code, params) {
+    try {
+      const response = await this.paystack.subaccount.update(subaccount_code, params);
+      if (response.status) {
+        return new PaymentResponse({
+          success: true,
+          reference: subaccount_code,
+          status: response.status,
+          message: 'Subaccount updated successfully',
+          data: response.data,
+        });
+      }
+      return new PaymentResponse({
+        success: false,
+        reference: subaccount_code,
+        status: response.status,
+        message: response.message || 'Subaccount update failed',
+      });
+    } catch (error) {
+      return new PaymentResponse({
+        success: false,
+        reference: subaccount_code,
+        message: `Error: ${error.message}`,
+      });
+    }
+  }
 }
 
 /**
@@ -248,4 +324,6 @@ module.exports = {
   PaymentGateway,
   PaystackPaymentGateway,
   PaymentResponse,
+  generatePaystackReference,
+  REFERENCE_PREFIX,
 };

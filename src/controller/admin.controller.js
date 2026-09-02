@@ -33,6 +33,11 @@ class AdminController {
     const result = await AdminService.changePlan(req.params.code, req.body.plan);
     return successResponse(req, res, result, 'Plan updated');
   });
+
+  static syncSubaccountFees = catchAsync(async (req, res) => {
+    const result = await AdminService.syncSubaccountFees();
+    return successResponse(req, res, result, 'Subaccount fees synced');
+  });
 }
 
 module.exports = { AdminController };

@@ -7,7 +7,7 @@ const httpStatus = require("http-status").default;
 const bankRepository = require("../repo/bankAccount.repo");
 const entityRepository = require("../repo/entity.repo");
 const invoiceRepository = require("../repo/invoice.repo");
-const { PaystackPaymentGateway } = require("../utils/paystack.utils");
+const { PaystackPaymentGateway, generatePaystackReference } = require("../utils/paystack.utils");
 const jwt = require("jsonwebtoken");
 const Authorization = require("../utils/authorization.service");
 const { getTheme, listThemes, DEFAULT_THEME_ID } = require("../utils/templates/themes");
@@ -34,7 +34,14 @@ class EntityService {
       account_number: accountNumber,
       bank_code: bankCode,
       business_name: existingEntity.name,
-      percentage_charge: 0.3,
+      // invoecr takes 0% of the split - the business's subaccount gets the
+      // full invoice amount. Paystack's own processing fee still applies
+      // separately and is charged to the subaccount, not invoecr's main
+      // account (see the `bearer: 'subaccount'` passed alongside every
+      // subaccount transaction in paystack.utils.js's initiatePayment) -
+      // otherwise invoecr's main balance would go negative on every
+      // transaction while earning nothing from the split.
+      percentage_charge: 0,
       description: "",
       primary_contact_email: existingEntity.email,
     });
@@ -209,7 +216,10 @@ class EntityService {
       httpStatus.BAD_REQUEST,
       "Invalid plan selected"
     );
-    const reference = crypto.randomUUID().split("-").join("").slice(0, 17);
+    // See paystack.utils.js's generatePaystackReference - this Paystack
+    // account's webhook is shared with another product, so the reference
+    // prefix is what lets that other platform route this event back here.
+    const reference = generatePaystackReference("subscription");
     const paystackGateway = new PaystackPaymentGateway();
     const paymentResponse = await paystackGateway.initiatePayment({
       email: entity.email,
