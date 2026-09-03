@@ -40,6 +40,14 @@ router.get(
   `${BASE}/public/:code`,
   InvoiceController.getPublicInvoice
 );
+// Unauthenticated: what PaymentCallback.vue calls after Paystack redirects
+// the customer's browser back post-checkout. A distinct path segment
+// ("payment-status", not just another :code) so it can never collide with
+// the route above, regardless of registration order.
+router.get(
+  `${BASE}/public/payment-status/:reference`,
+  InvoiceController.getPaymentStatus
+);
 router.get(
   `${BASE}/:code`,
   Authorization.authenticateToken,

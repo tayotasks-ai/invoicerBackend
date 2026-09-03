@@ -1,5 +1,5 @@
 const catchAsync = require('../utils/catchAsync');
-const { InvoiceService } = require('../services');
+const { InvoiceService, UtilsService } = require('../services');
 const { successResponse } = require('../utils/responder');
 const httpStatus = require('http-status');
 
@@ -88,6 +88,17 @@ class InvoiceController {
     const { code } = req.params;
     const invoice = await InvoiceService.getPublicInvoice(code);
     return successResponse(req, res, invoice);
+  });
+
+  // Public, unauthenticated - what the customer's browser calls after being
+  // redirected back from Paystack checkout (see PAYSTACK_CALLBACK_URL and
+  // frontend/src/views/PaymentCallback.vue). Keyed by the Paystack
+  // reference from the URL, not an invoice code, since that's all the
+  // redirect carries.
+  static getPaymentStatus = catchAsync(async (req, res, next) => {
+    const { reference } = req.params;
+    const result = await UtilsService.getPublicPaymentStatus(reference);
+    return successResponse(req, res, result);
   });
 
   // Streams the rendered PDF straight back to the client - this is a binary

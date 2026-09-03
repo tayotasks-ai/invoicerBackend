@@ -43,7 +43,7 @@ JWT_EXPIRES_IN=24h
 ROOT_ADMIN_EMAILS=
 
 # --- Paystack ---
-PAYSTACK_SECRET_KEY=
+PAYSTACK_SECRET_KEY=dd
 PAYSTACK_URL=https://api.paystack.co
 PAYSTACK_CALLBACK_URL=http://localhost:5110/callback
 
